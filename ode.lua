@@ -1,5 +1,5 @@
 -- Event configuration:
-local requiredSpeed = 80
+local requiredSpeed = 55
 
 -- Collision cooldown state
 local collisionCooldown = 0 -- Cooldown timer
@@ -127,7 +127,7 @@ function script.update(dt)
   end
 
   if player.speedKmh < requiredSpeed then 
-    if dangerouslySlowTimer > 3 then    
+    if dangerouslySlowTimer > 15 then    
       if totalScore > highestScore then
         highestScore = math.floor(totalScore)
         ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
