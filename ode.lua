@@ -1,5 +1,5 @@
 -- Event configuration:
-local requiredSpeed = 55
+local requiredSpeed = 80
 
 -- Collision cooldown state
 local collisionCooldown = 0 -- Cooldown timer
@@ -14,7 +14,6 @@ local maxComboMultiplier = 5 -- Maximum combo multiplier (changed from 10 to 5)
 
 -- This function is called before event activates. Once it returns true, it’ll run:
 function script.prepare(dt)
-  ac.debug('speed', ac.getCarState(1).speedKmh)
   return ac.getCarState(1).speedKmh > 60
 end
 
@@ -27,6 +26,67 @@ local highestScore = 0
 local dangerouslySlowTimer = 0
 local carsState = {}
 local wheelsWarningTimeout = 0
+
+-- Function to add messages to the UI
+local messages = {}
+local glitter = {}
+local glitterCount = 0
+
+function addMessage(text, mood)
+  for i = math.min(#messages + 1, 4), 2, -1 do
+    messages[i] = messages[i - 1]
+    messages[i].targetPos = i
+  end
+  messages[1] = { text = text, age = 0, targetPos = 1, currentPos = 1, mood = mood }
+  if mood == 1 then
+    for i = 1, 60 do
+      local dir = vec2(math.random() - 0.5, math.random() - 0.5)
+      glitterCount = glitterCount + 1
+      glitter[glitterCount] = { 
+        color = rgbm.new(hsv(math.random() * 360, 1, 1):rgb(), 1), 
+        pos = vec2(80, 140) + dir * vec2(40, 20),
+        velocity = dir:normalize():scale(0.2 + math.random()),
+        life = 0.5 + 0.5 * math.random()
+      }
+    end
+  end
+end
+
+-- Function to update messages and glitter effects
+local function updateMessages(dt)
+  comboColor = comboColor + dt * 10 * comboMeter
+  if comboColor > 360 then comboColor = comboColor - 360 end
+  for i = 1, #messages do
+    local m = messages[i]
+    m.age = m.age + dt
+    m.currentPos = math.applyLag(m.currentPos, m.targetPos, 0.8, dt)
+  end
+  for i = glitterCount, 1, -1 do
+    local g = glitter[i]
+    g.pos:add(g.velocity)
+    g.velocity.y = g.velocity.y + 0.02
+    g.life = g.life - dt
+    g.color.mult = math.saturate(g.life * 4)
+    if g.life < 0 then
+      if i < glitterCount then
+        glitter[i] = glitter[glitterCount]
+      end
+      glitterCount = glitterCount - 1
+    end
+  end
+  if comboMeter > 10 and math.random() > 0.98 then
+    for i = 1, math.floor(comboMeter) do
+      local dir = vec2(math.random() - 0.5, math.random() - 0.5)
+      glitterCount = glitterCount + 1
+      glitter[glitterCount] = { 
+        color = rgbm.new(hsv(math.random() * 360, 1, 1):rgb(), 1), 
+        pos = vec2(195, 75) + dir * vec2(40, 20),
+        velocity = dir:normalize():scale(0.2 + math.random()),
+        life = 0.5 + 0.5 * math.random()
+      }
+    end
+  end
+end
 
 function script.update(dt)
   local player = ac.getCarState(1)
@@ -67,7 +127,7 @@ function script.update(dt)
   end
 
   if player.speedKmh < requiredSpeed then 
-    if dangerouslySlowTimer > 10 then    
+    if dangerouslySlowTimer > 3 then    
       if totalScore > highestScore then
         highestScore = math.floor(totalScore)
         ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
@@ -117,7 +177,8 @@ function script.update(dt)
         collisionCounter = collisionCounter + 1
         totalScore = math.max(0, totalScore - 500) -- Reduced from -1000 to -500
         comboMeter = 1
-        addMessage('Collision: Lost 500 points. Collisions: ' .. collisionCounter .. '/' .. maxCollisions, -1)
+        addMessage('Collision: -500 points', -1) -- Display collision feedback
+        addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, -1)
 
         -- Reset score if collision counter reaches maxCollisions
         if collisionCounter >= maxCollisions then
@@ -149,66 +210,6 @@ function script.update(dt)
       state.collided = false
       state.drivingAlong = true
       state.nearMiss = false
-    end
-  end
-end
-
--- UI and message handling
-local messages = {}
-local glitter = {}
-local glitterCount = 0
-
-function addMessage(text, mood)
-  for i = math.min(#messages + 1, 4), 2, -1 do
-    messages[i] = messages[i - 1]
-    messages[i].targetPos = i
-  end
-  messages[1] = { text = text, age = 0, targetPos = 1, currentPos = 1, mood = mood }
-  if mood == 1 then
-    for i = 1, 60 do
-      local dir = vec2(math.random() - 0.5, math.random() - 0.5)
-      glitterCount = glitterCount + 1
-      glitter[glitterCount] = { 
-        color = rgbm.new(hsv(math.random() * 360, 1, 1):rgb(), 1), 
-        pos = vec2(80, 140) + dir * vec2(40, 20),
-        velocity = dir:normalize():scale(0.2 + math.random()),
-        life = 0.5 + 0.5 * math.random()
-      }
-    end
-  end
-end
-
-local function updateMessages(dt)
-  comboColor = comboColor + dt * 10 * comboMeter
-  if comboColor > 360 then comboColor = comboColor - 360 end
-  for i = 1, #messages do
-    local m = messages[i]
-    m.age = m.age + dt
-    m.currentPos = math.applyLag(m.currentPos, m.targetPos, 0.8, dt)
-  end
-  for i = glitterCount, 1, -1 do
-    local g = glitter[i]
-    g.pos:add(g.velocity)
-    g.velocity.y = g.velocity.y + 0.02
-    g.life = g.life - dt
-    g.color.mult = math.saturate(g.life * 4)
-    if g.life < 0 then
-      if i < glitterCount then
-        glitter[i] = glitter[glitterCount]
-      end
-      glitterCount = glitterCount - 1
-    end
-  end
-  if comboMeter > 10 and math.random() > 0.98 then
-    for i = 1, math.floor(comboMeter) do
-      local dir = vec2(math.random() - 0.5, math.random() - 0.5)
-      glitterCount = glitterCount + 1
-      glitter[glitterCount] = { 
-        color = rgbm.new(hsv(math.random() * 360, 1, 1):rgb(), 1), 
-        pos = vec2(195, 75) + dir * vec2(40, 20),
-        velocity = dir:normalize():scale(0.2 + math.random()),
-        life = 0.5 + 0.5 * math.random()
-      }
     end
   end
 end
