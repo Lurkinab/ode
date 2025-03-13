@@ -101,17 +101,17 @@ function script.update(dt)
       end
 
       if car.collidedWith == 0 and collisionCooldown <= 0 then
-        -- Handle collision
-        collisionCounter = collisionCounter + 1
-        totalScore = math.max(0, totalScore - 1000)
-        comboMeter = 1
-        addMessage('Collision: Lost 1000 points. Collisions: ' .. collisionCounter .. '/' .. maxCollisions, -1)
-
-        -- Update highest score if current score is higher
+        -- Update highest score if current score is higher (before deducting points)
         if totalScore > highestScore then
           highestScore = math.floor(totalScore)
           ac.sendChatMessage("New highest score: " .. highestScore .. " points!")
         end
+
+        -- Handle collision
+        collisionCounter = collisionCounter + 1
+        totalScore = math.max(0, totalScore - 500) -- Reduced from -1000 to -500
+        comboMeter = 1
+        addMessage('Collision: Lost 500 points. Collisions: ' .. collisionCounter .. '/' .. maxCollisions, -1)
 
         -- Reset score if collision counter reaches maxCollisions
         if collisionCounter >= maxCollisions then
