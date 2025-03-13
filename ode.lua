@@ -1,5 +1,5 @@
 -- Event configuration:
-local requiredSpeed = 80
+local requiredSpeed = 55
 
 -- Collision cooldown state
 local collisionCooldown = 0 -- Cooldown timer
@@ -11,9 +11,6 @@ local maxCollisions = 5 -- Maximum allowed collisions before score reset
 
 -- Combo multiplier cap
 local maxComboMultiplier = 5 -- Maximum combo multiplier (changed from 10 to 5)
-
--- Leaderboard state
-local leaderboardMessage = "" -- Stores the latest high score message
 
 -- This function is called before event activates. Once it returns true, it’ll run:
 function script.prepare(dt)
@@ -36,8 +33,7 @@ function script.update(dt)
   if player.engineLifeLeft < 1 then
     if totalScore > highestScore then
       highestScore = math.floor(totalScore)
-      leaderboardMessage = "New highest score: " .. highestScore .. " points!"
-      ac.sendChatMessage(leaderboardMessage)
+      ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
     end
     totalScore = 0
     comboMeter = 1
@@ -71,11 +67,10 @@ function script.update(dt)
   end
 
   if player.speedKmh < requiredSpeed then 
-    if dangerouslySlowTimer > 3 then    
+    if dangerouslySlowTimer > 10 then    
       if totalScore > highestScore then
         highestScore = math.floor(totalScore)
-        leaderboardMessage = "New highest score: " .. highestScore .. " points!"
-        ac.sendChatMessage(leaderboardMessage)
+        ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
       end
       totalScore = 0
       comboMeter = 1
@@ -115,8 +110,7 @@ function script.update(dt)
         -- Update highest score if current score is higher (before deducting points)
         if totalScore > highestScore then
           highestScore = math.floor(totalScore)
-          leaderboardMessage = "New highest score: " .. highestScore .. " points!"
-          ac.sendChatMessage(leaderboardMessage)
+          ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
         end
 
         -- Handle collision
@@ -258,13 +252,6 @@ function script.drawUI()
   ui.textColored('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
   ui.popFont()
 
-  -- Draw leaderboard
-  ui.offsetCursorY(40)
-  ui.pushFont(ui.Font.Title)
-  ui.text('Leaderboard')
-  ui.popFont()
-  ui.offsetCursorY(10)
-  ui.text(leaderboardMessage) -- Display the latest high score message
   ui.endOutline(rgbm(0, 0, 0, 0.3))
   ui.endTransparentWindow()
 end
