@@ -9,6 +9,12 @@ local collisionCooldownDuration = 2 -- Cooldown duration in seconds
 local collisionCounter = 0 -- Tracks the number of collisions
 local maxCollisions = 5 -- Maximum allowed collisions before score reset
 
+-- Combo multiplier cap
+local maxComboMultiplier = 5 -- Maximum combo multiplier (changed from 10 to 5)
+
+-- Leaderboard state
+local leaderboardMessage = "" -- Stores the latest high score message
+
 -- This function is called before event activates. Once it returns true, it’ll run:
 function script.prepare(dt)
   ac.debug('speed', ac.getCarState(1).speedKmh)
@@ -30,7 +36,8 @@ function script.update(dt)
   if player.engineLifeLeft < 1 then
     if totalScore > highestScore then
       highestScore = math.floor(totalScore)
-      ac.sendChatMessage("Scored " .. totalScore .. " points.")
+      leaderboardMessage = "New highest score: " .. highestScore .. " points!"
+      ac.sendChatMessage(leaderboardMessage)
     end
     totalScore = 0
     comboMeter = 1
@@ -48,6 +55,9 @@ function script.update(dt)
   local comboFadingRate = 0.2 * math.lerp(1, 0.1, math.lerpInvSat(player.speedKmh, 80, 200)) + player.wheelsOutside
   comboMeter = math.max(1, comboMeter - dt * comboFadingRate)
 
+  -- Cap the combo multiplier at maxComboMultiplier
+  comboMeter = math.min(comboMeter, maxComboMultiplier)
+
   local sim = ac.getSimState()
   while sim.carsCount > #carsState do
     carsState[#carsState + 1] = {}
@@ -64,7 +74,8 @@ function script.update(dt)
     if dangerouslySlowTimer > 3 then    
       if totalScore > highestScore then
         highestScore = math.floor(totalScore)
-        ac.sendChatMessage("Scored " .. totalScore .. " points.")
+        leaderboardMessage = "New highest score: " .. highestScore .. " points!"
+        ac.sendChatMessage(leaderboardMessage)
       end
       totalScore = 0
       comboMeter = 1
@@ -83,16 +94,16 @@ function script.update(dt)
     local state = carsState[i]
 
     -- Increase proximity requirement for near misses and overtakes
-    if car.pos:closerToThan(player.pos, 5) then -- Changed from 10 to 5
+    if car.pos:closerToThan(player.pos, 4) then -- Changed from 5 to 4 (get even closer)
       local drivingAlong = math.dot(car.look, player.look) > 0.2
       if not drivingAlong then
         state.drivingAlong = false
 
         -- Increase proximity requirement for near misses
-        if not state.nearMiss and car.pos:closerToThan(player.pos, 2) then -- Changed from 3 to 2
+        if not state.nearMiss and car.pos:closerToThan(player.pos, 1.5) then -- Changed from 2 to 1.5
           state.nearMiss = true
 
-          if car.pos:closerToThan(player.pos, 1.5) then -- Changed from 2.5 to 1.5
+          if car.pos:closerToThan(player.pos, 1) then -- Changed from 1.5 to 1
             comboMeter = comboMeter + 3
           else
             comboMeter = comboMeter + 1
@@ -104,7 +115,8 @@ function script.update(dt)
         -- Update highest score if current score is higher (before deducting points)
         if totalScore > highestScore then
           highestScore = math.floor(totalScore)
-          ac.sendChatMessage("New highest score: " .. highestScore .. " points!")
+          leaderboardMessage = "New highest score: " .. highestScore .. " points!"
+          ac.sendChatMessage(leaderboardMessage)
         end
 
         -- Handle collision
@@ -240,12 +252,19 @@ function script.drawUI()
   end
   ui.popFont()
 
-  -- Draw collision counter
+  -- Draw collision counter (bigger text)
   ui.offsetCursorY(20)
-  ui.pushFont(ui.Font.Main)
+  ui.pushFont(ui.Font.Title) -- Changed from Font.Main to Font.Title for bigger text
   ui.textColored('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
   ui.popFont()
 
+  -- Draw leaderboard
+  ui.offsetCursorY(40)
+  ui.pushFont(ui.Font.Title)
+  ui.text('Leaderboard')
+  ui.popFont()
+  ui.offsetCursorY(10)
+  ui.text(leaderboardMessage) -- Display the latest high score message
   ui.endOutline(rgbm(0, 0, 0, 0.3))
   ui.endTransparentWindow()
 end
