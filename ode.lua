@@ -27,7 +27,9 @@ local nearMissCooldownDuration = 3 -- Cooldown duration in seconds
 local nearMissMultiplier = 1 -- Derived from nearMissStreak
 
 -- UI position (movable)
-local uiPosition = vec2(300, 100) -- Initial position (center of screen adjusted)
+local uiPosition = vec2(300, 100) -- Initial position
+local isDragging = false
+local dragOffset = vec2(0, 0)
 
 -- Car states tracking
 local carsState = {}
@@ -90,12 +92,13 @@ function script.update(dt)
     if player.engineLifeLeft < 1 then
         if totalScore > highestScore then
             highestScore = math.floor(totalScore)
-            ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
+            ac.sendChatMessage("New highest score: " .. highestScore .. " points!")
         end
         totalScore = 0
         comboMeter = 1
         nearMissMultiplier = 1
         nearMissStreak = 0
+        collisionCounter = 0
         return
     end
 
@@ -110,7 +113,7 @@ function script.update(dt)
     if nearMissCooldown > 0 then
         nearMissCooldown = nearMissCooldown - dt
     elseif nearMissStreak > 0 then
-        nearMissStreak = 0 -- Reset streak if cooldown expires
+        nearMissStreak = 0
         nearMissMultiplier = 1
         ac.debug("Near miss cooldown reset", nearMissCooldown)
     end
@@ -120,7 +123,7 @@ function script.update(dt)
     comboMeter = math.max(1, comboMeter - dt * comboFadingRate)
     nearMissMultiplier = math.max(1, nearMissMultiplier - dt * comboFadingRate)
 
-    -- Cap the combo multiplier at maxComboMultiplier
+    -- Cap the multipliers
     comboMeter = math.min(comboMeter, maxComboMultiplier)
     nearMissMultiplier = math.min(nearMissMultiplier, maxComboMultiplier)
 
@@ -140,12 +143,13 @@ function script.update(dt)
         if dangerouslySlowTimer > 15 then    
             if totalScore > highestScore then
                 highestScore = math.floor(totalScore)
-                ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
+                ac.sendChatMessage("New highest score: " .. highestScore .. " points!")
             end
             totalScore = 0
             comboMeter = 1
             nearMissMultiplier = 1
             nearMissStreak = 0
+            collisionCounter = 0
         else
             if dangerouslySlowTimer == 0 then addMessage('Too slow!', -1) end
         end
@@ -157,33 +161,32 @@ function script.update(dt)
         dangerouslySlowTimer = 0
     end
 
+    local minDistance = 9999
     for i = 1, ac.getSimState().carsCount do 
         local car = ac.getCarState(i)
         local state = carsState[i]
 
-        -- Increase proximity requirement for near misses and overtakes
-        if car.position:distance(player.position) < 4 then -- Changed to distance function for consistency
+        local distance = car.position:distance(player.position)
+        if distance < minDistance and i ~= 1 then
+            minDistance = distance
+        end
+
+        if distance < 4 then
             local drivingAlong = math.dot(car.look, player.look) > 0.2
             if not drivingAlong then
                 state.drivingAlong = false
 
-                -- Increase proximity requirement for near misses
-                if not state.nearMiss and car.position:distance(player.position) < 1.5 then
+                if not state.nearMiss and distance < 1.5 then
                     state.nearMiss = true
-
-                    -- Increment near miss streak and reset cooldown
                     nearMissStreak = nearMissStreak + 1
-                    nearMissMultiplier = nearMissStreak + 1 -- Compute near miss multiplier
+                    nearMissMultiplier = nearMissStreak + 1
                     nearMissCooldown = nearMissCooldownDuration
-
-                    -- Display near miss message
                     if nearMissStreak > 1 then
-                        addMessage('Near Miss x' .. nearMissStreak .. '!', 1) -- Green text for near miss
+                        addMessage('Near Miss x' .. nearMissStreak .. '!', 1)
                     else
-                        addMessage('Near Miss!', 1) -- Green text for near miss
+                        addMessage('Near Miss!', 1)
                     end
-
-                    if car.position:distance(player.position) < 1 then
+                    if distance < 1 then
                         comboMeter = comboMeter + 3
                     else
                         comboMeter = comboMeter + 1
@@ -192,13 +195,10 @@ function script.update(dt)
             end
 
             if car.collidedWith == 0 and collisionCooldown <= 0 then
-                -- Update highest score if current score is higher (before deducting points)
                 if totalScore > highestScore then
                     highestScore = math.floor(totalScore)
-                    ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
+                    ac.sendChatMessage("New highest score: " .. highestScore .. " points!")
                 end
-
-                -- Handle collision
                 collisionCounter = collisionCounter + 1
                 totalScore = math.max(0, totalScore - 500)
                 comboMeter = 1
@@ -206,16 +206,12 @@ function script.update(dt)
                 nearMissStreak = 0
                 addMessage('Collision: -500 points', -1)
                 addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, -1)
-
-                -- Reset score if collision counter reaches maxCollisions
                 if collisionCounter >= maxCollisions then
                     ac.sendChatMessage("Too many collisions! Score reset.")
                     totalScore = 0
                     collisionCounter = 0
                     addMessage('Too many collisions! Score reset.', -1)
                 end
-
-                -- Start cooldown
                 collisionCooldown = collisionCooldownDuration
             end
 
@@ -230,7 +226,6 @@ function script.update(dt)
                     state.overtaken = true
                 end
             end
-
         else
             state.maxPosDot = -1
             state.overtaken = false
@@ -249,33 +244,47 @@ function script.drawUI()
     local speedRelative = math.saturate(math.floor(ac.getCarState(1).speedKmh) / requiredSpeed)
     local speedWarning = math.applyLag(0, speedRelative < 1 and 1 or 0, 0.5, uiState.dt)
 
-    local colorGrey = rgbm(0.7, 0.7, 0.7, 1)
-    local colorBlack = rgbm(0, 0, 0, 1)
+    local colorBlack = rgbm(0, 0, 0, 1) -- Solid black background
+    local colorWhite = rgbm(1, 1, 1, 1) -- White text
     local colorCombo = rgbm.new(hsv(comboColor, math.saturate(comboMeter / 10), 1):rgb(), math.saturate(comboMeter / 4))
     local colorNearMiss = rgbm(0, 1, 0, 1) -- Green for near miss
     local colorRed = rgbm(1, 0, 0, 1)
 
-    -- Movable transparent window
-    ui.beginTransparentWindow('overtakeScore', uiPosition, vec2(600, 300), true) -- true enables dragging
+    -- Custom window with solid black background
+    ui.pushStyleColor(ui.StyleColor.WindowBg, colorBlack)
+    ui.beginWindow('overtakeScore', uiPosition, vec2(600, 200))
     ui.beginOutline()
 
-    -- Large grey box (left) for points
+    -- Draw full black background
+    ui.drawRectFilled(vec2(0, 0), vec2(600, 200), colorBlack)
+
+    -- Large section for points
     ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
     ui.pushFont(ui.Font.Huge)
     ui.setCursor(vec2(50, 100))
-    ui.text(math.floor(totalScore) .. ' PTS')
+    ui.textColored(math.floor(totalScore) .. ' PTS', colorWhite)
     ui.popFont()
     ui.popStyleVar()
 
-    -- Top right section for multipliers
+    -- Right section for timer (assuming timePassed as "00:00")
+    ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
+    ui.pushFont(ui.Font.Huge)
+    ui.setCursor(vec2(450, 100))
+    local minutes = math.floor(timePassed / 60)
+    local seconds = math.floor(timePassed % 60)
+    ui.textColored(string.format("%02d:%02d", minutes, seconds), colorWhite)
+    ui.popFont()
+    ui.popStyleVar()
+
+    -- Top row for multipliers
     ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
     ui.pushFont(ui.Font.Title)
-    ui.setCursor(vec2(400, 50))
-    ui.text('1.0x') -- Placeholder for Speed (not implemented)
+    ui.setCursor(vec2(50, 20))
+    ui.textColored('1.0x', colorWhite) -- Speed
     ui.sameLine(0, 20)
-    ui.textColored(math.ceil(nearMissMultiplier * 10) / 10 .. 'x', colorNearMiss) -- Proximity (nearMissMultiplier)
+    ui.textColored(string.format('%.5fm', minDistance), colorWhite) -- Proximity (nearest car distance)
     ui.sameLine(0, 20)
-    ui.text('1.0x') -- Placeholder for additional multiplier
+    ui.textColored('1.0x', colorWhite) -- Combo placeholder
     ui.sameLine(0, 20)
     ui.beginOutline() -- Diagonal black box effect
     ui.textColored(math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
@@ -283,34 +292,30 @@ function script.drawUI()
     ui.popFont()
     ui.popStyleVar()
 
-    -- Small black box (right) for collision count
-    ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
-    ui.pushFont(ui.Font.Title)
-    ui.setCursor(vec2(450, 150))
-    ui.beginOutline() -- Fixed: No arguments for beginOutline
-    ui.textColored(collisionCounter .. '/' .. maxCollisions, colorRed)
-    ui.endOutline(colorBlack) -- Apply black outline
-    ui.popFont()
-    ui.popStyleVar()
-
-    -- Custom rendering for green near miss messages (under collision count)
+    -- Custom rendering for green near miss messages
     for i = 1, #messages do
         local m = messages[i]
-        if m.mood == 1 then -- Green text for near miss
+        if m.mood == 1 then
             ui.pushFont(ui.Font.Title)
-            ui.setCursor(vec2(400, 200 + m.currentPos * 30)) -- Under collision count
+            ui.setCursor(vec2(50, 150 + m.currentPos * 30))
             ui.textColored(m.text, colorNearMiss:lerp(rgbm(0, 0, 0, 1), m.age / 2))
             ui.popFont()
         end
     end
 
     ui.endOutline(rgbm(0, 0, 0, 0.3))
-    ui.endTransparentWindow()
+    ui.endWindow()
+    ui.popStyleColor()
 
     -- Update UI position if dragged
     if ui.windowHovered() and ui.isMouseLeftKeyDown() then
+        if not isDragging then
+            isDragging = true
+            dragOffset = ui.mousePos() - uiPosition
+        end
         local mousePos = ui.mousePos()
-        local windowSize = vec2(600, 300)
-        uiPosition = vec2(mousePos.x - windowSize.x / 2, mousePos.y - 20) -- Center under mouse
+        uiPosition = mousePos - dragOffset
+    elseif isDragging and not ui.isMouseLeftKeyDown() then
+        isDragging = false
     end
 end
