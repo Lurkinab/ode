@@ -57,7 +57,7 @@ end
 
 -- This function is called before event activates. Once it returns true, it’ll run:
 function script.prepare(dt)
-  return ac.getCarState(0).speedKmh > 60 -- Changed to 0 for player car
+  return ac.getCar(0).speedKmh > 60 -- Ensure player car (index 0)
 end
 
 function script.update(dt)
@@ -132,27 +132,32 @@ function script.update(dt)
 
   for i = 1, sim.carsCount do 
     local car = ac.getCar(i)
-    if car and car.index ~= 0 then -- Skip player car
-      local state = carsState[i]
+    if car and car.index ~= player.index and car.isConnected then -- Skip player car and ensure car is active
+      local state = carsState[i] or {}
+      carsState[i] = state
 
       -- Near miss logic (from overtake.lua with enhancements)
-      if car.pos:closerToThan(player.pos, nearMissDistance) and math.dot(car.look, player.look) > 0.2 then
-        if not state.nearMiss then
-          state.nearMiss = true
-          nearMissStreak = nearMissStreak + 1
-          nearMissMultiplier = math.min(nearMissMultiplier + 0.5, 5.0) -- Increment by 0.5, cap at 5x
-          nearMissCooldown = nearMissResetTime
-          local nearMissPoints = math.ceil(50 * comboMeter * nearMissMultiplier)
-          totalScore = totalScore + nearMissPoints
-          comboMeter = comboMeter + (car.pos:closerToThan(player.pos, 1.0) and 3 or 1) -- +3 if very close
-          addMessage('Near Miss! +' .. nearMissPoints .. ' (x' .. nearMissStreak .. ')')
+      if car.pos:closerToThan(player.pos, nearMissDistance) then
+        local drivingAlong = math.dot(car.look, player.look) > 0.2
+        if not drivingAlong then
+          state.drivingAlong = false
+          if not state.nearMiss and car.pos:closerToThan(player.pos, nearMissDistance) then
+            state.nearMiss = true
+            nearMissStreak = nearMissStreak + 1
+            nearMissMultiplier = math.min(nearMissMultiplier + 0.5, 5.0) -- Increment by 0.5, cap at 5x
+            nearMissCooldown = nearMissResetTime
+            local nearMissPoints = math.ceil(50 * comboMeter * nearMissMultiplier)
+            totalScore = totalScore + nearMissPoints
+            comboMeter = comboMeter + (car.pos:closerToThan(player.pos, 1.0) and 3 or 1) -- +3 if very close
+            addMessage('Near Miss! +' .. nearMissPoints .. ' (x' .. nearMissStreak .. ')')
+          end
         end
       else
         state.nearMiss = false
       end
 
       -- Collision logic
-      if car.collidedWith == 0 and collisionCooldown <= 0 then
+      if car.collidedWith == player.index and collisionCooldown <= 0 then
         if totalScore > highestScore then
           highestScore = math.floor(totalScore)
         end
@@ -182,7 +187,7 @@ function script.update(dt)
         if not state.overtaken and not state.collided and state.drivingAlong then
           local posDir = (car.pos - player.pos):normalize()
           local posDot = math.dot(posDir, car.look)
-          state.maxPosDot = math.max(state.maxPosDot, posDot)
+          state.maxPosDot = math.max(state.maxPosDot or -1, posDot)
           if posDot < -0.5 and state.maxPosDot > 0.5 then
             totalScore = totalScore + math.ceil(50 * comboMeter * nearMissMultiplier) -- Increased from 10 to 50
             comboMeter = comboMeter + 1
