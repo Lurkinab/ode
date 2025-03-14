@@ -7,7 +7,7 @@ local maxCollisions = 3 -- Max collisions before full reset
 -- Collision tracking
 local collisionCooldown = 0
 local collisionCooldownDuration = 2 -- seconds
-local collisionCounter = 0 -- MackSauce counter
+local crashCount = 0 -- MackSauce counter
 
 -- Scoring system
 local totalScore = 0
@@ -123,13 +123,13 @@ function updateMessages(dt)
 end
 
 -- Handle collision
-function handleCollision()
+function handleCollision(carIndex)
     if totalScore > highestScore then
         highestScore = math.floor(totalScore)
         ac.sendChatMessage("New highest score: " .. highestScore .. " points!")
     end
 
-    collisionCounter = collisionCounter + 1
+    crashCount = crashCount + 1
     if resetScoreOnCollision then
         totalScore = 0
     else
@@ -138,12 +138,13 @@ function handleCollision()
     comboMeter = 1
 
     addMessage('Collision: -' .. collisionPenalty .. ' points', -1)
-    addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, -1)
+    addMessage('MackSauce: ' .. crashCount .. '/' .. maxCollisions, -1)
+    addMessage('Collision detected with car ' .. carIndex, -1) -- Debug message
 
-    if collisionCounter >= maxCollisions then
+    if crashCount >= maxCollisions then
         ac.sendChatMessage("Too many collisions! Score reset.")
         totalScore = 0
-        collisionCounter = 0
+        crashCount = 0
         addMessage('Too many collisions! Score reset.', -1)
     end
 
@@ -227,12 +228,11 @@ function script.update(dt)
         local state = carsState[i]
         local distance = car.position:distance(player.position)
 
-        -- Collision detection (using earlier version's logic)
-        if car.collidedWith == 0 and collisionCooldown <= 0 then
+        -- Collision detection (prioritized)
+        if collisionCooldown <= 0 and car.collidedWith == 0 then
             state.collided = true
-            handleCollision()
+            handleCollision(i)
             collisionDetected = true
-            addMessage('Collision detected with car ' .. i, -1) -- Debug message
         end
 
         -- Near miss detection
@@ -273,12 +273,13 @@ function script.update(dt)
     end
 
     -- Teleport detection (only if no collision)
-    if not collisionDetected and lastPlayerPos:distance(player.position) > teleportThreshold then
+    local posChange = lastPlayerPos:distance(player.position)
+    if not collisionDetected and posChange > teleportThreshold then
         totalScore = 0
-        collisionCounter = 0
+        crashCount = 0
         comboMeter = 1
         resetAllCarStates()
-        addMessage('Teleport detected! Score and collisions reset.', -1)
+        addMessage('Teleport detected! Score and MackSauce reset.', -1)
     end
 
     lastPlayerPos = player.position
@@ -320,7 +321,7 @@ function script.drawUI()
 
     ui.offsetCursorY(20)
     ui.pushFont(ui.Font.Title)
-    ui.textColored('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
+    ui.textColored('MackSauce: ' .. crashCount .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
     ui.popFont()
 
     ui.endOutline(rgbm(0, 0, 0, 0.3))
