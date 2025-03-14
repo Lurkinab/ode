@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with fixed collision and near miss system
+-- Assetto Corsa ode.lua script with fixed collision using original logic
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -131,20 +131,20 @@ function script.update(dt)
     dangerouslySlowTimer = 0
   end
 
-  -- Collision detection
+  -- Collision, near miss, and overtake logic
   for i = 1, sim.carsCount do 
     local car = ac.getCar(i)
     if car and car.index ~= player.index then -- Skip player car
       local state = carsState[i] or {}
       carsState[i] = state
 
-      -- Collision check
-      if car.collidedWith == player.index and collisionCooldown <= 0 then
+      -- Collision detection (reverted to original logic)
+      if car.collidedWith == 0 and collisionCooldown <= 0 then
         if totalScore > highestScore then
           highestScore = math.floor(totalScore)
         end
         collisionCounter = collisionCounter + 1
-        totalScore = math.max(0, totalScore - 1500)
+        totalScore = math.max(0, totalScore - 1500) -- Keeping your preferred deduction
         comboMeter = 1
         nearMissMultiplier = 1.0
         nearMissStreak = 0
