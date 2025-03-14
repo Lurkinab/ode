@@ -26,6 +26,7 @@ local nearMissCooldownDuration = 3 -- Cooldown duration in seconds
 
 -- Teleport detection
 local lastPlayerPos = nil
+local lastPlayerSpeed = 0 -- For speed difference check
 local teleportThreshold = 100 -- meters
 
 -- Car states tracking
@@ -137,7 +138,7 @@ function handleCollision(carIndex)
     comboMeter = 1
 
     addMessage('Collision: -' .. collisionPenalty .. ' points', -1)
-    addMessage('MackSauce: ' .. crashCount, -1) -- Just tracks collisions, no reset
+    addMessage('MackSauce: ' .. crashCount, -1)
     addMessage('Collision with car ' .. carIndex, -1) -- Debug message
 
     collisionCooldown = collisionCooldownDuration
@@ -150,6 +151,7 @@ function script.update(dt)
     -- Skip first frame
     if lastPlayerPos == nil then
         lastPlayerPos = player.position
+        lastPlayerSpeed = player.speedKmh
         return
     end
 
@@ -161,7 +163,7 @@ function script.update(dt)
         end
         totalScore = 0
         comboMeter = 1
-        crashCount = 0 -- Reset on engine failure
+        crashCount = 0
         resetAllCarStates()
         return
     end
@@ -204,7 +206,7 @@ function script.update(dt)
             end
             totalScore = 0
             comboMeter = 1
-            crashCount = 0 -- Reset on slow timeout
+            crashCount = 0
         else
             if dangerouslySlowTimer == 0 then addMessage('Too slow!', -1) end
         end
@@ -217,6 +219,7 @@ function script.update(dt)
 
     -- Process cars
     local collisionDetected = false
+    local speedDiff = math.abs(player.speedKmh - lastPlayerSpeed) -- Speed change check
     for i = 2, sim.carsCount do
         local car = ac.getCarState(i)
         local state = carsState[i]
@@ -226,17 +229,18 @@ function script.update(dt)
         ac.debug("Car " .. i .. " collidedWith", car.collidedWith)
         ac.debug("Player collidedWith", player.collidedWith)
         ac.debug("Distance to car " .. i, distance)
+        ac.debug("Speed diff", speedDiff)
 
         -- Collision detection
         if collisionCooldown <= 0 then
             local isCollision = false
-            -- Check both possible player indices
-            if car.collidedWith == 0 or car.collidedWith == 1 then
+            -- Check both car and player collision data
+            if car.collidedWith == 0 or car.collidedWith == 1 or player.collidedWith == (i - 1) then
                 isCollision = true
-            -- Fallback: Very close proximity
-            elseif distance < 1 then
+            -- Fallback: Proximity or speed change
+            elseif distance < 2 or (distance < 3 and speedDiff > 5) then
                 isCollision = true
-                addMessage('Fallback collision detected (distance)', -1)
+                addMessage('Fallback collision detected', -1)
             end
 
             if isCollision then
@@ -294,6 +298,7 @@ function script.update(dt)
     end
 
     lastPlayerPos = player.position
+    lastPlayerSpeed = player.speedKmh
 end
 
 -- Draw the UI
@@ -332,7 +337,7 @@ function script.drawUI()
 
     ui.offsetCursorY(20)
     ui.pushFont(ui.Font.Title)
-    ui.textColored('MackSauce: ' .. crashCount, rgbm(1, 0, 0, 1)) -- No max limit displayed
+    ui.textColored('MackSauce: ' .. crashCount, rgbm(1, 0, 0, 1))
     ui.popFont()
 
     ui.endOutline(rgbm(0, 0, 0, 0.3))
