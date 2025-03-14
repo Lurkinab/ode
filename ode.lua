@@ -2,12 +2,11 @@
 local requiredSpeed = 55
 local collisionPenalty = 500 -- Points deducted per collision
 local resetScoreOnCollision = false -- Set to true to reset score to 0 on collision
-local maxCollisions = 3 -- Max collisions before full reset
 
 -- Collision tracking
 local collisionCooldown = 0
 local collisionCooldownDuration = 2 -- seconds
-local crashCount = 0 -- MackSauce counter
+local crashCount = 0 -- MackSauce counter (tracks collisions, no reset unless teleport)
 
 -- Scoring system
 local totalScore = 0
@@ -138,15 +137,8 @@ function handleCollision(carIndex)
     comboMeter = 1
 
     addMessage('Collision: -' .. collisionPenalty .. ' points', -1)
-    addMessage('MackSauce: ' .. crashCount .. '/' .. maxCollisions, -1)
-    addMessage('Collision detected with car ' .. carIndex, -1) -- Debug message
-
-    if crashCount >= maxCollisions then
-        ac.sendChatMessage("Too many collisions! Score reset.")
-        totalScore = 0
-        crashCount = 0
-        addMessage('Too many collisions! Score reset.', -1)
-    end
+    addMessage('MackSauce: ' .. crashCount, -1) -- Just tracks collisions, no reset
+    addMessage('Collision with car ' .. carIndex, -1) -- Debug message
 
     collisionCooldown = collisionCooldownDuration
 end
@@ -169,6 +161,7 @@ function script.update(dt)
         end
         totalScore = 0
         comboMeter = 1
+        crashCount = 0 -- Reset on engine failure
         resetAllCarStates()
         return
     end
@@ -211,6 +204,7 @@ function script.update(dt)
             end
             totalScore = 0
             comboMeter = 1
+            crashCount = 0 -- Reset on slow timeout
         else
             if dangerouslySlowTimer == 0 then addMessage('Too slow!', -1) end
         end
@@ -228,11 +222,28 @@ function script.update(dt)
         local state = carsState[i]
         local distance = car.position:distance(player.position)
 
-        -- Collision detection (prioritized)
-        if collisionCooldown <= 0 and car.collidedWith == 0 then
-            state.collided = true
-            handleCollision(i)
-            collisionDetected = true
+        -- Debug collision data
+        ac.debug("Car " .. i .. " collidedWith", car.collidedWith)
+        ac.debug("Player collidedWith", player.collidedWith)
+        ac.debug("Distance to car " .. i, distance)
+
+        -- Collision detection
+        if collisionCooldown <= 0 then
+            local isCollision = false
+            -- Check both possible player indices
+            if car.collidedWith == 0 or car.collidedWith == 1 then
+                isCollision = true
+            -- Fallback: Very close proximity
+            elseif distance < 1 then
+                isCollision = true
+                addMessage('Fallback collision detected (distance)', -1)
+            end
+
+            if isCollision then
+                state.collided = true
+                handleCollision(i)
+                collisionDetected = true
+            end
         end
 
         -- Near miss detection
@@ -321,7 +332,7 @@ function script.drawUI()
 
     ui.offsetCursorY(20)
     ui.pushFont(ui.Font.Title)
-    ui.textColored('MackSauce: ' .. crashCount .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
+    ui.textColored('MackSauce: ' .. crashCount, rgbm(1, 0, 0, 1)) -- No max limit displayed
     ui.popFont()
 
     ui.endOutline(rgbm(0, 0, 0, 0.3))
