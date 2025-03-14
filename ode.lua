@@ -1,5 +1,4 @@
 -- Assetto Corsa ode.lua script with original collision logic restored using ac.getCarState
-
 -- Event configuration:
 local requiredSpeed = 55
 
