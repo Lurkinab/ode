@@ -172,85 +172,64 @@ function script.update(dt)
     local relativeSpeed = math.abs(player.speedKmh - car.speedKmh)
     local speedBonus = math.lerp(1, 2, math.saturate(relativeSpeed / 100)) -- Scale reward up to 2x
 
-    -- Increase proximity requirement for near misses and overtakes
+    -- Near miss logic (no direction check)
     if car.pos:closerToThan(player.pos, nearMissDistance) then
-      local drivingAlong = math.dot(car.look, player.look) > 0.2
-      if not drivingAlong then
-        state.drivingAlong = false
+      if not state.nearMiss then
+        state.nearMiss = true
 
-        -- Near miss logic
-        if not state.nearMiss then
-          state.nearMiss = true
-
-          -- Reward based on proximity
-          local reward = 1
-          if car.pos:closerToThan(player.pos, 1) then
-            reward = 3 -- Bigger reward for closer near miss
-          end
-
-          -- Apply relative speed bonus
-          reward = reward * speedBonus
-
-          -- Add streak bonus
-          nearMissStreak = nearMissStreak + 1
-          nearMissStreakBonus = math.min(nearMissStreak, 5) -- Cap streak bonus at 5x
-          reward = reward + nearMissStreakBonus
-
-          -- Update combo meter
-          comboMeter = comboMeter + reward
-
-          -- Display green text message for near miss
-          addMessage('Near Miss! +' .. math.floor(reward) .. 'x (Streak: ' .. nearMissStreak .. ')', 1)
-
-          -- Reset near miss cooldown
-          nearMissCooldown = 3 -- Reset cooldown to 3 seconds
+        -- Reward based on proximity
+        local reward = 1
+        if car.pos:closerToThan(player.pos, 1) then
+          reward = 3 -- Bigger reward for closer near miss
         end
+
+        -- Apply relative speed bonus
+        reward = reward * speedBonus
+
+        -- Add streak bonus
+        nearMissStreak = nearMissStreak + 1
+        nearMissStreakBonus = math.min(nearMissStreak, 5) -- Cap streak bonus at 5x
+        reward = reward + nearMissStreakBonus
+
+        -- Update combo meter
+        comboMeter = comboMeter + reward
+
+        -- Display green text message for near miss
+        addMessage('Near Miss! +' .. math.floor(reward) .. 'x (Streak: ' .. nearMissStreak .. ')', 1)
+
+        -- Reset near miss cooldown
+        nearMissCooldown = 3 -- Reset cooldown to 3 seconds
       end
-
-      if car.collidedWith == 0 and collisionCooldown <= 0 then
-        -- Update highest score if current score is higher (before deducting points)
-        if totalScore > highestScore then
-          highestScore = math.floor(totalScore)
-          ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
-        end
-
-        -- Handle collision
-        collisionCounter = collisionCounter + 1
-        totalScore = math.max(0, totalScore - 500) -- Reduced from -1000 to -500
-        comboMeter = 1
-        addMessage('Collision: -500 points', -1) -- Display collision feedback
-        addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, -1)
-
-        -- Reset score if collision counter reaches maxCollisions
-        if collisionCounter >= maxCollisions then
-          ac.sendChatMessage("Too many collisions! Score reset.")
-          totalScore = 0
-          collisionCounter = 0 -- Reset collision counter
-          addMessage('Too many collisions! Score reset.', -1)
-        end
-
-        -- Start cooldown
-        collisionCooldown = collisionCooldownDuration
-      end
-
-      if not state.overtaken and not state.collided and state.drivingAlong then
-        local posDir = (car.pos - player.pos):normalize()
-        local posDot = math.dot(posDir, car.look)
-        state.maxPosDot = math.max(state.maxPosDot, posDot)
-        if posDot < -0.5 and state.maxPosDot > 0.5 then
-          totalScore = totalScore + math.ceil(10 * comboMeter)
-          comboMeter = comboMeter + 1
-          comboColor = comboColor + 90
-          state.overtaken = true
-        end
-      end
-
     else
-      state.maxPosDot = -1
-      state.overtaken = false
-      state.collided = false
-      state.drivingAlong = true
+      -- Reset near miss state when cars are far apart
       state.nearMiss = false
+    end
+
+    -- Collision logic (unchanged)
+    if car.collidedWith == 0 and collisionCooldown <= 0 then
+      -- Update highest score if current score is higher (before deducting points)
+      if totalScore > highestScore then
+        highestScore = math.floor(totalScore)
+        ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
+      end
+
+      -- Handle collision
+      collisionCounter = collisionCounter + 1
+      totalScore = math.max(0, totalScore - 500) -- Reduced from -1000 to -500
+      comboMeter = 1
+      addMessage('Collision: -500 points', -1) -- Display collision feedback
+      addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, -1)
+
+      -- Reset score if collision counter reaches maxCollisions
+      if collisionCounter >= maxCollisions then
+        ac.sendChatMessage("Too many collisions! Score reset.")
+        totalScore = 0
+        collisionCounter = 0 -- Reset collision counter
+        addMessage('Too many collisions! Score reset.', -1)
+      end
+
+      -- Start cooldown
+      collisionCooldown = collisionCooldownDuration
     end
   end
 end
