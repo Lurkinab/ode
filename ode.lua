@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with fixed collision using original logic
+-- Assetto Corsa ode.lua script with original collision logic restored
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -138,7 +138,7 @@ function script.update(dt)
       local state = carsState[i] or {}
       carsState[i] = state
 
-      -- Collision detection (reverted to original logic)
+      -- Collision detection (exact original logic)
       if car.collidedWith == 0 and collisionCooldown <= 0 then
         if totalScore > highestScore then
           highestScore = math.floor(totalScore)
