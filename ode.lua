@@ -24,6 +24,7 @@ local comboColor = 0
 local nearMissStreak = 0
 local nearMissCooldown = 0
 local nearMissCooldownDuration = 3 -- Cooldown duration in seconds
+local nearMissMultiplier = 1 -- Derived from nearMissStreak
 
 -- UI position (movable)
 local uiPosition = vec2(300, 100) -- Initial position (center of screen adjusted)
@@ -93,6 +94,8 @@ function script.update(dt)
         end
         totalScore = 0
         comboMeter = 1
+        nearMissMultiplier = 1
+        nearMissStreak = 0
         return
     end
 
@@ -108,14 +111,18 @@ function script.update(dt)
         nearMissCooldown = nearMissCooldown - dt
     elseif nearMissStreak > 0 then
         nearMissStreak = 0 -- Reset streak if cooldown expires
+        nearMissMultiplier = 1
+        ac.debug("Near miss cooldown reset", nearMissCooldown)
     end
 
     -- Make combo meter fade slower
     local comboFadingRate = 0.2 * math.lerp(1, 0.1, math.lerpInvSat(player.speedKmh, 80, 200)) + player.wheelsOutside
     comboMeter = math.max(1, comboMeter - dt * comboFadingRate)
+    nearMissMultiplier = math.max(1, nearMissMultiplier - dt * comboFadingRate)
 
     -- Cap the combo multiplier at maxComboMultiplier
     comboMeter = math.min(comboMeter, maxComboMultiplier)
+    nearMissMultiplier = math.min(nearMissMultiplier, maxComboMultiplier)
 
     local sim = ac.getSimState()
     while sim.carsCount > #carsState do
@@ -137,11 +144,14 @@ function script.update(dt)
             end
             totalScore = 0
             comboMeter = 1
+            nearMissMultiplier = 1
+            nearMissStreak = 0
         else
             if dangerouslySlowTimer == 0 then addMessage('Too slow!', -1) end
         end
         dangerouslySlowTimer = dangerouslySlowTimer + dt
         comboMeter = 1
+        nearMissMultiplier = 1
         return
     else 
         dangerouslySlowTimer = 0
@@ -163,6 +173,7 @@ function script.update(dt)
 
                     -- Increment near miss streak and reset cooldown
                     nearMissStreak = nearMissStreak + 1
+                    nearMissMultiplier = nearMissStreak + 1 -- Compute near miss multiplier
                     nearMissCooldown = nearMissCooldownDuration
 
                     -- Display near miss message
@@ -191,6 +202,8 @@ function script.update(dt)
                 collisionCounter = collisionCounter + 1
                 totalScore = math.max(0, totalScore - 500)
                 comboMeter = 1
+                nearMissMultiplier = 1
+                nearMissStreak = 0
                 addMessage('Collision: -500 points', -1)
                 addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, -1)
 
@@ -260,11 +273,13 @@ function script.drawUI()
     ui.setCursor(vec2(400, 50))
     ui.text('1.0x') -- Placeholder for Speed (not implemented)
     ui.sameLine(0, 20)
-    ui.text('1.0x') -- Placeholder for Proximity (maps to nearMissStreak)
+    ui.textColored(math.ceil(nearMissMultiplier * 10) / 10 .. 'x', colorNearMiss) -- Proximity (nearMissMultiplier)
     ui.sameLine(0, 20)
-    ui.text('1.0x') -- Maps to comboMeter
+    ui.text('1.0x') -- Placeholder for additional multiplier
     ui.sameLine(0, 20)
-    ui.textColored(math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo) -- Diagonal black box effect
+    ui.beginOutline() -- Diagonal black box effect
+    ui.textColored(math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
+    ui.endOutline(colorBlack)
     ui.popFont()
     ui.popStyleVar()
 
@@ -272,9 +287,9 @@ function script.drawUI()
     ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
     ui.pushFont(ui.Font.Title)
     ui.setCursor(vec2(450, 150))
-    ui.beginOutline(colorBlack) -- Black outline to mimic PNG
+    ui.beginOutline() -- Fixed: No arguments for beginOutline
     ui.textColored(collisionCounter .. '/' .. maxCollisions, colorRed)
-    ui.endOutline()
+    ui.endOutline(colorBlack) -- Apply black outline
     ui.popFont()
     ui.popStyleVar()
 
