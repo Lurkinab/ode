@@ -6,7 +6,7 @@ local resetScoreOnCollision = false -- Set to true to reset score to 0 on collis
 -- Collision tracking
 local collisionCooldown = 0
 local collisionCooldownDuration = 2 -- seconds
-local crashCount = 0 -- MackSauce counter (tracks collisions, no reset unless teleport)
+local crashCount = 0 -- MackSauce counter (tracks collisions, resets on teleport)
 
 -- Scoring system
 local totalScore = 0
@@ -26,7 +26,6 @@ local nearMissCooldownDuration = 3 -- Cooldown duration in seconds
 
 -- Teleport detection
 local lastPlayerPos = nil
-local lastPlayerSpeed = 0 -- For speed difference check
 local teleportThreshold = 100 -- meters
 
 -- Car states tracking
@@ -151,7 +150,6 @@ function script.update(dt)
     -- Skip first frame
     if lastPlayerPos == nil then
         lastPlayerPos = player.position
-        lastPlayerSpeed = player.speedKmh
         return
     end
 
@@ -217,9 +215,19 @@ function script.update(dt)
         dangerouslySlowTimer = 0
     end
 
+    -- Teleport detection (moved up to ensure it’s checked)
+    local posChange = lastPlayerPos:distance(player.position)
+    if posChange > teleportThreshold then
+        totalScore = 0
+        crashCount = 0
+        comboMeter = 1
+        resetAllCarStates()
+        addMessage('Teleport detected! Score and MackSauce reset.', -1)
+        ac.debug("Teleport triggered", posChange)
+    end
+
     -- Process cars
     local collisionDetected = false
-    local speedDiff = math.abs(player.speedKmh - lastPlayerSpeed) -- Speed change check
     for i = 2, sim.carsCount do
         local car = ac.getCarState(i)
         local state = carsState[i]
@@ -229,18 +237,18 @@ function script.update(dt)
         ac.debug("Car " .. i .. " collidedWith", car.collidedWith)
         ac.debug("Player collidedWith", player.collidedWith)
         ac.debug("Distance to car " .. i, distance)
-        ac.debug("Speed diff", speedDiff)
 
         -- Collision detection
         if collisionCooldown <= 0 then
             local isCollision = false
-            -- Check both car and player collision data
-            if car.collidedWith == 0 or car.collidedWith == 1 or player.collidedWith == (i - 1) then
+            -- Primary: Distance-based (catches all contacts)
+            if distance < 2 then
                 isCollision = true
-            -- Fallback: Proximity or speed change
-            elseif distance < 2 or (distance < 3 and speedDiff > 5) then
+                addMessage('Distance-based collision', -1)
+            -- Secondary: Collision data (for robustness)
+            elseif car.collidedWith == 0 or car.collidedWith == 1 or player.collidedWith == (i - 1) then
                 isCollision = true
-                addMessage('Fallback collision detected', -1)
+                addMessage('CollidedWith-based collision', -1)
             end
 
             if isCollision then
@@ -287,18 +295,7 @@ function script.update(dt)
         state.lastDistance = distance
     end
 
-    -- Teleport detection (only if no collision)
-    local posChange = lastPlayerPos:distance(player.position)
-    if not collisionDetected and posChange > teleportThreshold then
-        totalScore = 0
-        crashCount = 0
-        comboMeter = 1
-        resetAllCarStates()
-        addMessage('Teleport detected! Score and MackSauce reset.', -1)
-    end
-
     lastPlayerPos = player.position
-    lastPlayerSpeed = player.speedKmh
 end
 
 -- Draw the UI
