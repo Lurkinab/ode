@@ -122,7 +122,7 @@ function updateMessages(dt)
 end
 
 -- Handle collision
-function handleCollision(carIndex)
+function handleCollision(source)
     if totalScore > highestScore then
         highestScore = math.floor(totalScore)
         ac.sendChatMessage("New highest score: " .. highestScore .. " points!")
@@ -138,7 +138,7 @@ function handleCollision(carIndex)
 
     addMessage('Collision: -' .. collisionPenalty .. ' points', -1)
     addMessage('MackSauce: ' .. crashCount, -1)
-    addMessage('Collision with car ' .. carIndex, -1) -- Debug message
+    addMessage('Collision detected (' .. source .. ')', -1) -- Debug source
 
     collisionCooldown = collisionCooldownDuration
 end
@@ -215,7 +215,7 @@ function script.update(dt)
         dangerouslySlowTimer = 0
     end
 
-    -- Teleport detection (moved up to ensure it’s checked)
+    -- Teleport detection
     local posChange = lastPlayerPos:distance(player.position)
     if posChange > teleportThreshold then
         totalScore = 0
@@ -226,8 +226,15 @@ function script.update(dt)
         ac.debug("Teleport triggered", posChange)
     end
 
-    -- Process cars
-    local collisionDetected = false
+    -- Process collisions and cars
+    if collisionCooldown <= 0 then
+        -- Wall collision check
+        if player.collidedWith ~= -1 then -- -1 means no collision
+            handleCollision("wall")
+            ac.debug("Player collidedWith (wall)", player.collidedWith)
+        end
+    end
+
     for i = 2, sim.carsCount do
         local car = ac.getCarState(i)
         local state = carsState[i]
@@ -238,24 +245,10 @@ function script.update(dt)
         ac.debug("Player collidedWith", player.collidedWith)
         ac.debug("Distance to car " .. i, distance)
 
-        -- Collision detection
-        if collisionCooldown <= 0 then
-            local isCollision = false
-            -- Primary: Distance-based (catches all contacts)
-            if distance < 2 then
-                isCollision = true
-                addMessage('Distance-based collision', -1)
-            -- Secondary: Collision data (for robustness)
-            elseif car.collidedWith == 0 or car.collidedWith == 1 or player.collidedWith == (i - 1) then
-                isCollision = true
-                addMessage('CollidedWith-based collision', -1)
-            end
-
-            if isCollision then
-                state.collided = true
-                handleCollision(i)
-                collisionDetected = true
-            end
+        -- Car collision check (old script logic)
+        if collisionCooldown <= 0 and car.collidedWith == 0 then
+            state.collided = true
+            handleCollision("car " .. i)
         end
 
         -- Near miss detection
