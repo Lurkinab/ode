@@ -6,12 +6,12 @@ local resetScoreOnCollision = false -- Set to true to reset score to 0 on collis
 -- Collision tracking
 local collisionCooldown = 0
 local collisionCooldownDuration = 2 -- seconds
-local crashCount = 0 -- MackSauce counter (tracks collisions, resets on teleport)
+local crashCount = 0 -- Tracks collisions, resets when speed = 0
 
 -- Scoring system
 local totalScore = 0
 local comboMeter = 1 -- Overtake multiplier
-local nearMissMultiplier = 1 -- Near miss multiplier (mirrors combo logic)
+local nearMissMultiplier = 1 -- Near miss multiplier
 local maxComboMultiplier = 10 -- Applies to both
 local highestScore = 0
 
@@ -24,10 +24,6 @@ local nearMissCooldownDuration = 3 -- 3 seconds
 
 -- Near miss tracking
 local nearMissStreak = 0
-
--- Teleport detection
-local lastPlayerPos = nil
-local teleportThreshold = 100 -- meters
 
 -- Car states tracking
 local carsState = {}
@@ -139,7 +135,7 @@ function handleCollision(source)
     nearMissStreak = 0
 
     addMessage('Collision: -' .. collisionPenalty .. ' points', -1)
-    addMessage('MackSauce: ' .. crashCount, -1)
+    addMessage(crashCount, -1) -- Display raw count under MackSauce
     addMessage('Collision detected (' .. source .. ')', -1)
 
     collisionCooldown = collisionCooldownDuration
@@ -185,12 +181,12 @@ function script.update(dt)
         end
     end
 
-    -- Combo meter fade
+    -- Combo and near miss multiplier fade
     local fadingRate = 0.2 * math.lerp(1, 0.1, math.lerpInvSat(player.speedKmh, 80, 200)) + player.wheelsOutside
     comboMeter = math.max(1, comboMeter - dt * fadingRate)
-    comboMeter = math.min(comboMeter + (dt * 0.1), maxComboMultiplier) -- Slight boost to test
+    comboMeter = math.min(comboMeter, maxComboMultiplier)
     nearMissMultiplier = math.max(1, nearMissMultiplier - dt * fadingRate)
-    nearMissMultiplier = math.min(nearMissMultiplier + (dt * 0.1), maxComboMultiplier) -- Slight boost to test
+    nearMissMultiplier = math.min(nearMissMultiplier, maxComboMultiplier)
 
     -- Ensure car states match sim
     local sim = ac.getSimState()
@@ -206,7 +202,7 @@ function script.update(dt)
         wheelsWarningTimeout = 60
     end
 
-    -- Speed check
+    -- Speed check and reset
     if player.speedKmh < requiredSpeed then
         if dangerouslySlowTimer > 15 then
             if totalScore > highestScore then
@@ -224,23 +220,17 @@ function script.update(dt)
         dangerouslySlowTimer = dangerouslySlowTimer + dt
         comboMeter = 1
         nearMissMultiplier = 1
-        return
-    else
-        dangerouslySlowTimer = 0
-    end
-
-    -- Teleport detection
-    local posChange = lastPlayerPos:distance(player.position)
-    ac.debug("Teleport check", posChange)
-    if posChange > teleportThreshold then
+    elseif player.speedKmh == 0 then
         totalScore = 0
-        crashCount = 0
         comboMeter = 1
         nearMissMultiplier = 1
         nearMissStreak = 0
+        crashCount = 0
         resetAllCarStates()
-        addMessage('Teleport detected! Score and MackSauce reset.', -1)
-        ac.debug("Teleport triggered", posChange)
+        addMessage('Speed 0! Score and multipliers reset.', -1)
+        ac.debug("Speed reset triggered", player.speedKmh)
+    else
+        dangerouslySlowTimer = 0
     end
 
     -- Process collisions and cars
@@ -267,8 +257,8 @@ function script.update(dt)
                 handleCollision("car " .. i)
             end
 
-            -- Near miss detection (within 1 meter)
-            if not state.collided and distance < 1 then
+            -- Near miss detection (within 1.5 meters)
+            if not state.collided and distance < 1.5 then
                 nearMissStreak = nearMissStreak + 1
                 nearMissMultiplier = math.min(nearMissMultiplier + 1, maxComboMultiplier)
                 nearMissCooldown = nearMissCooldownDuration
@@ -316,40 +306,42 @@ function script.drawUI()
     local colorCombo = rgbm.new(hsv(comboColor, math.saturate(comboMeter / 10), 1):rgb(), math.saturate(comboMeter / 4))
     local colorNearMiss = rgbm(0, 1, 0, 1) -- Green for near miss
 
-    ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 600, 100), vec2(400, 400))
+    -- Main window matching PNG layout
+    ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 300, 100), vec2(600, 300))
     ui.beginOutline()
 
+    -- Big grey box (left) for points
     ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
-    ui.pushFont(ui.Font.Title)
-    ui.text('Highest Score: ' .. highestScore)
+    ui.pushFont(ui.Font.Huge)
+    ui.setCursor(vec2(50, 50))
+    ui.text(math.floor(totalScore) .. ' pts')
     ui.popFont()
     ui.popStyleVar()
 
-    ui.pushFont(ui.Font.Huge)
-    ui.text(math.floor(totalScore) .. ' pts')
-    ui.sameLine(0, 40)
-    ui.beginRotation()
-    ui.textColored(math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
-    ui.sameLine(0, 40) -- Position near miss multiplier next to combo
-    ui.textColored(math.ceil(nearMissMultiplier * 10) / 10 .. 'x', colorNearMiss)
-    if comboMeter > 20 then
-        ui.endRotation(math.sin(comboMeter / 180 * 3141.5) * 3 * math.lerpInvSat(comboMeter, 20, 30) + 90)
-    else
-        ui.endRotation(0)
-    end
-    ui.popFont()
-
-    ui.offsetCursorY(20)
+    -- Top right box for multipliers
+    ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
     ui.pushFont(ui.Font.Title)
-    ui.textColored('MackSauce: ' .. crashCount, rgbm(1, 0, 0, 1))
+    ui.setCursor(vec2(400, 50))
+    ui.textColored(math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
+    ui.sameLine(0, 20)
+    ui.textColored(math.ceil(nearMissMultiplier * 10) / 10 .. 'x', colorNearMiss)
     ui.popFont()
+    ui.popStyleVar()
 
-    -- Custom rendering for green near miss messages
+    -- Bottom right box for collision count
+    ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
+    ui.pushFont(ui.Font.Title)
+    ui.setCursor(vec2(400, 200))
+    ui.textColored(crashCount, rgbm(1, 0, 0, 1)) -- Raw collision count
+    ui.popFont()
+    ui.popStyleVar()
+
+    -- Custom rendering for green near miss messages (under collision count)
     for i = 1, #messages do
         local m = messages[i]
         if m.mood == 2 then -- Green text for near miss
             ui.pushFont(ui.Font.Title)
-            ui.setCursor(vec2(80, 100 + m.currentPos * 30))
+            ui.setCursor(vec2(400, 230 + m.currentPos * 30)) -- Under collision count
             ui.textColored(m.text, rgbm(0, 1, 0, 1 - m.age / 2))
             ui.popFont()
         end
