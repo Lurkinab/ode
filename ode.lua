@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with fixed tracking and improved near miss logic
+---- Assetto Corsa ode.lua script with fixed collision and near miss detection
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -17,9 +17,10 @@ local maxComboMultiplier = 5 -- Maximum combo multiplier
 -- Near Miss Logic
 local nearMissStreak = 0 -- Track consecutive near misses
 local nearMissCooldown = 0 -- Cooldown timer for streak reset
-local nearMissDistance = 2.0 -- Match overtake.lua's 2-meter threshold
+local nearMissDistance = 3.0 -- Increased to 3.0 meters for better detection
 local nearMissMultiplier = 1.0 -- Separate near miss multiplier
 local nearMissResetTime = 3 -- 3 seconds to reset near miss multiplier
+local lastNearMiss = 0 -- Timestamp for debouncing near miss events
 
 -- Event state:
 local timePassed = 0
@@ -31,7 +32,7 @@ local dangerouslySlowTimer = 0
 local carsState = {}
 local wheelsWarningTimeout = 0
 
--- Message system for UI (inspired by overtake.lua)
+-- Message system for UI
 local messages = {}
 local maxMessages = 5 -- Maximum number of messages to display
 local messageLifetime = 3.0 -- Duration messages stay on screen (seconds)
@@ -57,7 +58,7 @@ end
 
 -- This function is called before event activates. Once it returns true, it’ll run:
 function script.prepare(dt)
-  return ac.getCar(0).speedKmh > 60 -- Ensure player car (index 0)
+  return ac.getCar(0).speedKmh > 60
 end
 
 function script.update(dt)
@@ -130,52 +131,46 @@ function script.update(dt)
     dangerouslySlowTimer = 0
   end
 
+  -- Collision detection using player.collidedWith
+  if (player.collidedWith >= 0 or player.collisionCount > 0) and collisionCooldown <= 0 then
+    collisionCounter = collisionCounter + 1
+    totalScore = math.max(0, totalScore - 1500)
+    comboMeter = 1
+    nearMissMultiplier = 1.0
+    nearMissStreak = 0
+    addMessage('Collision: -1500')
+    addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions)
+    if collisionCounter >= maxCollisions then
+      totalScore = 0
+      collisionCounter = 0
+      nearMissMultiplier = 1.0
+      nearMissStreak = 0
+      addMessage('Too many collisions! Score reset.')
+    end
+    collisionCooldown = collisionCooldownDuration
+  end
+
+  -- Near miss and overtake logic
   for i = 1, sim.carsCount do 
     local car = ac.getCar(i)
-    if car and car.index ~= player.index and car.isConnected then -- Skip player car and ensure car is active
+    if car and car.index ~= player.index then -- Skip player car
       local state = carsState[i] or {}
       carsState[i] = state
 
-      -- Near miss logic (from overtake.lua with enhancements)
-      if car.pos:closerToThan(player.pos, nearMissDistance) then
-        local drivingAlong = math.dot(car.look, player.look) > 0.2
-        if not drivingAlong then
-          state.drivingAlong = false
-          if not state.nearMiss and car.pos:closerToThan(player.pos, nearMissDistance) then
-            state.nearMiss = true
-            nearMissStreak = nearMissStreak + 1
-            nearMissMultiplier = math.min(nearMissMultiplier + 0.5, 5.0) -- Increment by 0.5, cap at 5x
-            nearMissCooldown = nearMissResetTime
-            local nearMissPoints = math.ceil(50 * comboMeter * nearMissMultiplier)
-            totalScore = totalScore + nearMissPoints
-            comboMeter = comboMeter + (car.pos:closerToThan(player.pos, 1.0) and 3 or 1) -- +3 if very close
-            addMessage('Near Miss! +' .. nearMissPoints .. ' (x' .. nearMissStreak .. ')')
-          end
+      -- Near miss logic with proximity check only
+      local distance = car.pos:distance(player.pos)
+      if distance <= nearMissDistance and distance > 0.1 then -- Ensure not too close (avoid collision overlap)
+        local currentTime = os.time()
+        if currentTime - lastNearMiss >= 1 then -- Debounce to avoid rapid triggers
+          nearMissStreak = nearMissStreak + 1
+          nearMissMultiplier = math.min(nearMissMultiplier + 0.5, 5.0)
+          nearMissCooldown = nearMissResetTime
+          lastNearMiss = currentTime
+          local nearMissPoints = math.ceil(50 * comboMeter * nearMissMultiplier)
+          totalScore = totalScore + nearMissPoints
+          comboMeter = comboMeter + (distance < 1.0 and 3 or 1) -- Bonus for very close
+          addMessage('Near Miss! +' .. nearMissPoints .. ' (x' .. nearMissStreak .. ')')
         end
-      else
-        state.nearMiss = false
-      end
-
-      -- Collision logic
-      if car.collidedWith == player.index and collisionCooldown <= 0 then
-        if totalScore > highestScore then
-          highestScore = math.floor(totalScore)
-        end
-        collisionCounter = collisionCounter + 1
-        totalScore = math.max(0, totalScore - 1500) -- Increased from -500 to -1500
-        comboMeter = 1
-        nearMissMultiplier = 1.0
-        nearMissStreak = 0
-        addMessage('Collision: -1500')
-        addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions)
-        if collisionCounter >= maxCollisions then
-          totalScore = 0
-          collisionCounter = 0
-          nearMissMultiplier = 1.0
-          nearMissStreak = 0
-          addMessage('Too many collisions! Score reset.')
-        end
-        collisionCooldown = collisionCooldownDuration
       end
 
       -- Overtake logic
@@ -189,7 +184,7 @@ function script.update(dt)
           local posDot = math.dot(posDir, car.look)
           state.maxPosDot = math.max(state.maxPosDot or -1, posDot)
           if posDot < -0.5 and state.maxPosDot > 0.5 then
-            totalScore = totalScore + math.ceil(50 * comboMeter * nearMissMultiplier) -- Increased from 10 to 50
+            totalScore = totalScore + math.ceil(50 * comboMeter * nearMissMultiplier)
             comboMeter = comboMeter + 1
             comboColor = comboColor + 90
             state.overtaken = true
