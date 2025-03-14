@@ -9,7 +9,7 @@ local collisionCooldownDuration = 2 -- Cooldown duration in seconds
 local crashCount = 0 -- Tracks the number of crashes (MackSauce)
 
 -- Combo multiplier cap
-local maxComboMultiplier = 5 -- Maximum combo multiplier (changed from 10 to 5)
+local maxComboMultiplier = 10 -- Maximum combo multiplier (changed from 5 to 10)
 
 -- Near Miss Logic
 local nearMissStreak = 0 -- Track consecutive near misses
@@ -126,8 +126,8 @@ function script.update(dt)
     collisionCooldown = collisionCooldown - dt
   end
 
-  -- Update combo meter fade rate
-  local comboFadingRate = 0.1 -- Constant fade rate
+  -- Update combo meter fade rate (slower fade)
+  local comboFadingRate = 0.05 -- Slower fade rate
   comboMeter = math.max(1, comboMeter - dt * comboFadingRate)
 
   -- Cap the combo multiplier at maxComboMultiplier
@@ -182,16 +182,15 @@ function script.update(dt)
       if not state.nearMiss then
         state.nearMiss = true
 
-        -- Reward for near miss
-        local reward = 1 -- Constant reward
-        comboMeter = comboMeter + reward
-        totalScore = totalScore + math.ceil(10 * comboMeter)
+        -- Reward for near miss (100 points)
+        totalScore = totalScore + 100
+        comboMeter = comboMeter + 1
 
         -- Update streak
         nearMissStreak = nearMissStreak + 1
 
         -- Display green text message for near miss
-        addMessage('Near Miss! +' .. reward .. 'x (Streak: ' .. nearMissStreak .. ')', 1)
+        addMessage('Near Miss! +100 points (Streak: ' .. nearMissStreak .. ')', 1)
 
         -- Reset near miss cooldown
         nearMissCooldown = 3 -- Reset cooldown to 3 seconds
@@ -199,6 +198,20 @@ function script.update(dt)
     else
       -- Reset near miss state when cars are far apart
       state.nearMiss = false
+    end
+
+    -- Overtake logic
+    if not state.overtaken and not state.collided then
+      local posDir = (car.pos - player.pos):normalize()
+      local posDot = math.dot(posDir, car.look)
+      state.maxPosDot = math.max(state.maxPosDot, posDot)
+      if posDot < -0.5 and state.maxPosDot > 0.5 then
+        -- Reward for overtake (100 points)
+        totalScore = totalScore + 100
+        comboMeter = comboMeter + 1
+        state.overtaken = true
+        addMessage('Overtake! +100 points', 1)
+      end
     end
 
     -- Collision logic (unchanged except for crash count)
