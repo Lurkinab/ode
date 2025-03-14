@@ -1,4 +1,4 @@
----- Assetto Corsa ode.lua script with fixed collision and near miss detection
+-- Assetto Corsa ode.lua script with fixed collision and event detection
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -17,7 +17,7 @@ local maxComboMultiplier = 5 -- Maximum combo multiplier
 -- Near Miss Logic
 local nearMissStreak = 0 -- Track consecutive near misses
 local nearMissCooldown = 0 -- Cooldown timer for streak reset
-local nearMissDistance = 3.0 -- Increased to 3.0 meters for better detection
+local nearMissDistance = 3.0 -- Proximity threshold for near miss
 local nearMissMultiplier = 1.0 -- Separate near miss multiplier
 local nearMissResetTime = 3 -- 3 seconds to reset near miss multiplier
 local lastNearMiss = 0 -- Timestamp for debouncing near miss events
@@ -131,8 +131,8 @@ function script.update(dt)
     dangerouslySlowTimer = 0
   end
 
-  -- Collision detection using player.collidedWith
-  if (player.collidedWith >= 0 or player.collisionCount > 0) and collisionCooldown <= 0 then
+  -- Collision detection using collidedWith
+  if player.collided and collisionCooldown <= 0 then
     collisionCounter = collisionCounter + 1
     totalScore = math.max(0, totalScore - 1500)
     comboMeter = 1
@@ -157,7 +157,7 @@ function script.update(dt)
       local state = carsState[i] or {}
       carsState[i] = state
 
-      -- Near miss logic with proximity check only
+      -- Near miss logic with proximity check
       local distance = car.pos:distance(player.pos)
       if distance <= nearMissDistance and distance > 0.1 then -- Ensure not too close (avoid collision overlap)
         local currentTime = os.time()
@@ -207,50 +207,4 @@ function script.drawUI()
   updateMessages(uiState.dt)
 
   local speedRelative = math.saturate(math.floor(ac.getCar(0).speedKmh) / requiredSpeed)
-  speedWarning = math.applyLag(speedWarning, speedRelative < 1 and 1 or 0, 0.5, uiState.dt)
-
-  local colorDark = rgbm(0.4, 0.4, 0.4, 1)
-  local colorGrey = rgbm(0.7, 0.7, 0.7, 1)
-  local colorAccent = rgbm.new(hsv(speedRelative * 120, 1, 1):rgb(), 1)
-  local colorCombo = rgbm.new(hsv(comboColor, math.saturate(comboMeter / 10), 1):rgb(), math.saturate(comboMeter / 4))
-
-  -- Draw the score and collision counter
-  ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 600, 100), vec2(400, 400))
-  ui.beginOutline()
-
-  ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
-  ui.pushFont(ui.Font.Title)
-  ui.text('Highest Score: ' .. highestScore)
-  ui.popFont()
-  ui.popStyleVar()
-
-  ui.pushFont(ui.Font.Huge)
-  ui.text(totalScore .. ' pts')
-  ui.sameLine(0, 40)
-  ui.beginRotation()
-  ui.textColored(math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
-  if comboMeter > 20 then
-    ui.endRotation(math.sin(comboMeter / 180 * 3141.5) * 3 * math.lerpInvSat(comboMeter, 20, 30) + 90)
-  end
-  ui.popFont()
-
-  -- Draw collision counter and near miss multiplier
-  ui.offsetCursorY(20)
-  ui.pushFont(ui.Font.Title)
-  ui.textColored('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
-  ui.text('Near Miss Multiplier: ' .. string.format('%.1fx', nearMissMultiplier))
-  ui.popFont()
-
-  -- Draw temporary messages below collision counter
-  ui.offsetCursorY(20)
-  for i, msg in ipairs(messages) do
-    local alpha = 1.0 - (msg.age / messageLifetime)
-    ui.pushStyleVar(ui.StyleVar.Alpha, alpha)
-    ui.text(msg.text)
-    ui.popStyleVar()
-    ui.offsetCursorY(20)
-  end
-
-  ui.endOutline(rgbm(0, 0, 0, 0.3))
-  ui.endTransparentWindow()
-end
+  speedWarning = math.applyLag(speedWarning, speedRelative < 1 and 1
