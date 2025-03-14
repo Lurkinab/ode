@@ -25,6 +25,9 @@ local nearMissCooldownDuration = 3 -- 3 seconds
 -- Near miss tracking
 local nearMissStreak = 0
 
+-- UI position (movable)
+local uiPosition = vec2(300, 100) -- Initial position (center of screen adjusted)
+
 -- Car states tracking
 local carsState = {}
 
@@ -135,7 +138,7 @@ function handleCollision(source)
     nearMissStreak = 0
 
     addMessage('Collision: -' .. collisionPenalty .. ' points', -1)
-    addMessage(crashCount, -1) -- Display raw count under MackSauce
+    addMessage(crashCount, -1) -- Display raw count under collision message
     addMessage('Collision detected (' .. source .. ')', -1)
 
     collisionCooldown = collisionCooldownDuration
@@ -144,12 +147,6 @@ end
 -- Update function
 function script.update(dt)
     local player = ac.getCarState(1)
-
-    -- Skip first frame
-    if lastPlayerPos == nil then
-        lastPlayerPos = player.position
-        return
-    end
 
     -- Handle engine failure
     if player.engineLifeLeft < 1 then
@@ -202,7 +199,7 @@ function script.update(dt)
         wheelsWarningTimeout = 60
     end
 
-    -- Speed check and reset
+    -- Speed check (separate from reset)
     if player.speedKmh < requiredSpeed then
         if dangerouslySlowTimer > 15 then
             if totalScore > highestScore then
@@ -220,7 +217,12 @@ function script.update(dt)
         dangerouslySlowTimer = dangerouslySlowTimer + dt
         comboMeter = 1
         nearMissMultiplier = 1
-    elseif player.speedKmh == 0 then
+    else
+        dangerouslySlowTimer = 0
+    end
+
+    -- Speed-based reset
+    if player.speedKmh <= 0 then
         totalScore = 0
         comboMeter = 1
         nearMissMultiplier = 1
@@ -229,8 +231,6 @@ function script.update(dt)
         resetAllCarStates()
         addMessage('Speed 0! Score and multipliers reset.', -1)
         ac.debug("Speed reset triggered", player.speedKmh)
-    else
-        dangerouslySlowTimer = 0
     end
 
     -- Process collisions and cars
@@ -288,8 +288,6 @@ function script.update(dt)
             state.lastDistance = distance
         end
     end
-
-    lastPlayerPos = player.position
 end
 
 -- Draw the UI
@@ -306,8 +304,8 @@ function script.drawUI()
     local colorCombo = rgbm.new(hsv(comboColor, math.saturate(comboMeter / 10), 1):rgb(), math.saturate(comboMeter / 4))
     local colorNearMiss = rgbm(0, 1, 0, 1) -- Green for near miss
 
-    -- Main window matching PNG layout
-    ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 300, 100), vec2(600, 300))
+    -- Movable transparent window
+    ui.beginTransparentWindow('overtakeScore', uiPosition, vec2(600, 300), true) -- true enables dragging
     ui.beginOutline()
 
     -- Big grey box (left) for points
@@ -349,4 +347,11 @@ function script.drawUI()
 
     ui.endOutline(rgbm(0, 0, 0, 0.3))
     ui.endTransparentWindow()
+
+    -- Update UI position if dragged
+    if ui.windowHovered() and ui.isMouseLeftKeyDown() then
+        local mousePos = ui.mousePos()
+        local windowSize = vec2(600, 300)
+        uiPosition = vec2(mousePos.x - windowSize.x / 2, mousePos.y - 20)
+    end
 end
