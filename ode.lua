@@ -248,11 +248,9 @@ function script.drawUI()
     local colorWhite = rgbm(1, 1, 1, 1) -- White text
     local colorCombo = rgbm.new(hsv(comboColor, math.saturate(comboMeter / 10), 1):rgb(), math.saturate(comboMeter / 4))
     local colorNearMiss = rgbm(0, 1, 0, 1) -- Green for near miss
-    local colorRed = rgbm(1, 0, 0, 1)
 
-    -- Custom window with solid black background
-    ui.pushStyleColor(ui.StyleColor.WindowBg, colorBlack)
-    ui.beginWindow('overtakeScore', uiPosition, vec2(600, 200))
+    -- Movable window with solid black background
+    ui.beginTransparentWindow('overtakeScore', uiPosition, vec2(600, 200), true) -- true enables dragging
     ui.beginOutline()
 
     -- Draw full black background
@@ -266,7 +264,7 @@ function script.drawUI()
     ui.popFont()
     ui.popStyleVar()
 
-    -- Right section for timer (assuming timePassed as "00:00")
+    -- Right section for timer
     ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
     ui.pushFont(ui.Font.Huge)
     ui.setCursor(vec2(450, 100))
@@ -304,8 +302,7 @@ function script.drawUI()
     end
 
     ui.endOutline(rgbm(0, 0, 0, 0.3))
-    ui.endWindow()
-    ui.popStyleColor()
+    ui.endTransparentWindow()
 
     -- Update UI position if dragged
     if ui.windowHovered() and ui.isMouseLeftKeyDown() then
