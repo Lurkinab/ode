@@ -12,10 +12,10 @@ local maxCollisions = 5 -- Maximum allowed collisions before score reset
 -- Combo multiplier cap
 local maxComboMultiplier = 5 -- Maximum combo multiplier (changed from 10 to 5)
 
--- Near Miss Logic Improvements
+-- Near Miss Logic
 local nearMissStreak = 0 -- Track consecutive near misses
-local nearMissStreakBonus = 0 -- Bonus multiplier for streaks
 local nearMissCooldown = 0 -- Cooldown timer for streak reset
+local nearMissDistance = 1.5 -- Constant distance for near miss (1.5 meters)
 
 -- This function is called before event activates. Once it returns true, it’ll run:
 function script.prepare(dt)
@@ -113,7 +113,7 @@ function script.update(dt)
   end
 
   -- Update combo meter fade rate
-  local comboFadingRate = 0.1 * math.lerp(1, 0.1, math.lerpInvSat(player.speedKmh, 80, 200)) + player.wheelsOutside
+  local comboFadingRate = 0.1 -- Constant fade rate
   comboMeter = math.max(1, comboMeter - dt * comboFadingRate)
 
   -- Cap the combo multiplier at maxComboMultiplier
@@ -123,9 +123,8 @@ function script.update(dt)
   if nearMissCooldown > 0 then
     nearMissCooldown = nearMissCooldown - dt
     if nearMissCooldown <= 0 then
-      -- Reset streak and bonus if cooldown expires
+      -- Reset streak if cooldown expires
       nearMissStreak = 0
-      nearMissStreakBonus = 0
       addMessage('Near Miss Streak Reset!', -1) -- Optional: Notify player of streak reset
     end
   end
@@ -164,38 +163,21 @@ function script.update(dt)
     local car = ac.getCarState(i)
     local state = carsState[i]
 
-    -- Dynamic proximity threshold based on speed
-    local speedFactor = math.lerpInvSat(player.speedKmh, 80, 200) -- Scale based on speed
-    local nearMissDistance = 1.5 * speedFactor -- Increase threshold at higher speeds
-
-    -- Relative speed consideration
-    local relativeSpeed = math.abs(player.speedKmh - car.speedKmh)
-    local speedBonus = math.lerp(1, 2, math.saturate(relativeSpeed / 100)) -- Scale reward up to 2x
-
-    -- Near miss logic (no direction check)
+    -- Near miss logic (only proximity check)
     if car.pos:closerToThan(player.pos, nearMissDistance) then
       if not state.nearMiss then
         state.nearMiss = true
 
-        -- Reward based on proximity
-        local reward = 1
-        if car.pos:closerToThan(player.pos, 1) then
-          reward = 3 -- Bigger reward for closer near miss
-        end
-
-        -- Apply relative speed bonus
-        reward = reward * speedBonus
-
-        -- Add streak bonus
-        nearMissStreak = nearMissStreak + 1
-        nearMissStreakBonus = math.min(nearMissStreak, 5) -- Cap streak bonus at 5x
-        reward = reward + nearMissStreakBonus
-
-        -- Update combo meter
+        -- Reward for near miss
+        local reward = 1 -- Constant reward
         comboMeter = comboMeter + reward
+        totalScore = totalScore + math.ceil(10 * comboMeter)
+
+        -- Update streak
+        nearMissStreak = nearMissStreak + 1
 
         -- Display green text message for near miss
-        addMessage('Near Miss! +' .. math.floor(reward) .. 'x (Streak: ' .. nearMissStreak .. ')', 1)
+        addMessage('Near Miss! +' .. reward .. 'x (Streak: ' .. nearMissStreak .. ')', 1)
 
         -- Reset near miss cooldown
         nearMissCooldown = 3 -- Reset cooldown to 3 seconds
