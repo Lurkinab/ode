@@ -19,6 +19,9 @@ local nearMissDistance = 1.5 -- Constant distance for near miss (1.5 meters)
 -- Track player's last position to detect teleport
 local lastPlayerPos = nil -- Initialize as nil to handle first frame properly
 
+-- Debug flag to help troubleshoot collision issues
+local debugMode = true -- Set to true to see collision debug messages
+
 -- This function is called before event activates. Once it returns true, it'll run:
 function script.prepare(dt)
   return ac.getCarState(1).speedKmh > 60
@@ -112,12 +115,70 @@ function resetCarStates()
   end
 end
 
+-- Function to check for collisions
+function checkCollision(player)
+  local sim = ac.getSimState()
+  local collisionDetected = false
+  
+  -- Check if player has collided with anything
+  if player.collision then
+    if debugMode then
+      addMessage("Debug: General collision detected!", 0)
+    end
+    
+    -- Now find which car we collided with
+    for i = 2, sim.carsCount do
+      local car = ac.getCarState(i)
+      local state = carsState[i]
+      
+      -- First ensure the state exists
+      if not state then
+        carsState[i] = initCarState()
+        state = carsState[i]
+      end
+      
+      -- Check if close enough to be a possible collision
+      if car.pos:closerToThan(player.pos, 5) then
+        -- If not on cooldown and not already counted
+        if collisionCooldown <= 0 and not state.collided then
+          if debugMode then
+            addMessage("Debug: Car " .. i .. " collision detected!", 0)
+          end
+          
+          -- Update highest score if current score is higher
+          if totalScore > highestScore then
+            highestScore = math.floor(totalScore)
+            ac.sendChatMessage("New highest score: " .. highestScore .. " points!")
+          end
+          
+          -- Handle collision
+          crashCount = crashCount + 1
+          totalScore = math.max(0, totalScore - 500)
+          comboMeter = 1
+          state.collided = true
+          
+          addMessage('Collision: -500 points', -1)
+          addMessage('MackSauce: ' .. crashCount, -1)
+          
+          -- Start cooldown
+          collisionCooldown = collisionCooldownDuration
+          collisionDetected = true
+          break -- Only count one collision at a time
+        end
+      end
+    end
+  end
+  
+  return collisionDetected
+end
+
 function script.update(dt)
   local player = ac.getCarState(1)
 
   -- Initialize lastPlayerPos if it's the first frame
   if lastPlayerPos == nil then
     lastPlayerPos = player.position
+    resetCarStates() -- Make sure car states are initialized
     return -- Skip the first frame to establish position
   end
 
@@ -197,74 +258,61 @@ function script.update(dt)
     dangerouslySlowTimer = 0
   end
 
-  -- Process other cars (AI cars)
-  for i = 2, sim.carsCount do -- Start from 2 to skip player car (player is always 1)
-    local car = ac.getCarState(i)
-    local state = carsState[i]
-    
-    if not state then -- Ensure state exists
-      carsState[i] = initCarState()
-      state = carsState[i]
-    end
-
-    -- Check for collisions first before near misses
-    -- Collision can happen from either direction
-    if (car.collidedWith == 1 or player.collidedWith == i) and not state.collided and collisionCooldown <= 0 then
-      -- Update highest score if current score is higher (before deducting points)
-      if totalScore > highestScore then
-        highestScore = math.floor(totalScore)
-        ac.sendChatMessage("New highest score: " .. highestScore .. " points!") 
-      end
-
-      -- Handle collision
-      crashCount = crashCount + 1 -- Increment crash count
-      totalScore = math.max(0, totalScore - 500) -- Deduct 500 points
-      comboMeter = 1 -- Reset combo meter
-      state.collided = true -- Mark as collided
+  -- Check for collisions first - this is the primary issue we're fixing
+  local collisionHappened = checkCollision(player)
+  
+  -- Only process other cars for near misses and overtakes if no collision happened
+  if not collisionHappened then
+    -- Process other cars (AI cars)
+    for i = 2, sim.carsCount do
+      local car = ac.getCarState(i)
+      local state = carsState[i]
       
-      addMessage('Collision: -500 points', -1) -- Display collision feedback
-      addMessage('MackSauce: ' .. crashCount, -1) -- Display crash count
-
-      -- Start cooldown
-      collisionCooldown = collisionCooldownDuration
-    end
-
-    -- Near miss logic - only check if not recently collided
-    if not state.collided and car.pos:closerToThan(player.pos, nearMissDistance) then
-      if not state.nearMiss then
-        state.nearMiss = true
-
-        -- Reward for near miss
-        local points = 100 * comboMeter
-        totalScore = totalScore + points
-        comboMeter = comboMeter + 0.5
-
-        -- Update streak
-        nearMissStreak = nearMissStreak + 1
-
-        -- Display green text message for near miss
-        addMessage('Near Miss! +' .. math.floor(points) .. ' points (Streak: ' .. nearMissStreak .. ')', 1)
-
-        -- Reset near miss cooldown
-        nearMissCooldown = 3
+      if not state then -- Ensure state exists
+        carsState[i] = initCarState()
+        state = carsState[i]
       end
-    else
-      -- Reset near miss state when cars are far apart
-      state.nearMiss = false
-    end
-
-    -- Overtake logic - only if not collided
-    if not state.overtaken and not state.collided then
-      local posDir = (car.pos - player.pos):normalize()
-      local posDot = math.dot(posDir, car.look)
-      state.maxPosDot = math.max(state.maxPosDot, posDot)
-      if posDot < -0.5 and state.maxPosDot > 0.5 then
-        -- Reward for overtake
-        local points = 100 * comboMeter
-        totalScore = totalScore + points
-        comboMeter = comboMeter + 1
-        state.overtaken = true
-        addMessage('Overtake! +' .. math.floor(points) .. ' points', 1)
+  
+      -- Only process near misses and overtakes if no collision with this car
+      if not state.collided then
+        -- Near miss logic
+        if car.pos:closerToThan(player.pos, nearMissDistance) then
+          if not state.nearMiss then
+            state.nearMiss = true
+  
+            -- Reward for near miss
+            local points = 100 * comboMeter
+            totalScore = totalScore + points
+            comboMeter = comboMeter + 0.5
+  
+            -- Update streak
+            nearMissStreak = nearMissStreak + 1
+  
+            -- Display green text message for near miss
+            addMessage('Near Miss! +' .. math.floor(points) .. ' points (Streak: ' .. nearMissStreak .. ')', 1)
+  
+            -- Reset near miss cooldown
+            nearMissCooldown = 3
+          end
+        else
+          -- Reset near miss state when cars are far apart
+          state.nearMiss = false
+        end
+  
+        -- Overtake logic - only if not collided
+        if not state.overtaken then
+          local posDir = (car.pos - player.pos):normalize()
+          local posDot = math.dot(posDir, car.look)
+          state.maxPosDot = math.max(state.maxPosDot, posDot)
+          if posDot < -0.5 and state.maxPosDot > 0.5 then
+            -- Reward for overtake
+            local points = 100 * comboMeter
+            totalScore = totalScore + points
+            comboMeter = comboMeter + 1
+            state.overtaken = true
+            addMessage('Overtake! +' .. math.floor(points) .. ' points', 1)
+          end
+        end
       end
     end
   end
