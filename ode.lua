@@ -2,11 +2,12 @@
 local requiredSpeed = 55
 local collisionPenalty = 500 -- Points deducted per collision
 local resetScoreOnCollision = false -- Set to true to reset score to 0 on collision
+local maxCollisions = 3 -- Max collisions before full reset
 
 -- Collision tracking
 local collisionCooldown = 0
 local collisionCooldownDuration = 2 -- seconds
-local crashCount = 0 -- MackSauce counter
+local collisionCounter = 0 -- MackSauce counter
 
 -- Scoring system
 local totalScore = 0
@@ -22,7 +23,7 @@ local wheelsWarningTimeout = 0
 -- Near miss tracking
 local nearMissStreak = 0
 local nearMissCooldown = 0
-local nearMissDistance = 1.5 -- meters
+local nearMissCooldownDuration = 3 -- Cooldown duration in seconds
 
 -- Teleport detection
 local lastPlayerPos = nil
@@ -49,7 +50,8 @@ function createCarState()
         collided = false,
         nearMiss = false,
         maxPosDot = 0,
-        lastDistance = 1000
+        lastDistance = 1000,
+        drivingAlong = true
     }
 end
 
@@ -120,16 +122,14 @@ function updateMessages(dt)
     end
 end
 
--- Handle collision detection
+-- Handle collision
 function handleCollision()
-    -- Update highest score before penalties
     if totalScore > highestScore then
         highestScore = math.floor(totalScore)
         ac.sendChatMessage("New highest score: " .. highestScore .. " points!")
     end
 
-    -- Apply penalty or reset score
-    crashCount = crashCount + 1
+    collisionCounter = collisionCounter + 1
     if resetScoreOnCollision then
         totalScore = 0
     else
@@ -137,38 +137,54 @@ function handleCollision()
     end
     comboMeter = 1
 
-    -- Notify player
-    addMessage('Collision! -' .. collisionPenalty .. ' points', -1)
-    addMessage('MackSauce: ' .. crashCount, -1)
+    addMessage('Collision: -' .. collisionPenalty .. ' points', -1)
+    addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, -1)
 
-    -- Set cooldown
+    if collisionCounter >= maxCollisions then
+        ac.sendChatMessage("Too many collisions! Score reset.")
+        totalScore = 0
+        collisionCounter = 0
+        addMessage('Too many collisions! Score reset.', -1)
+    end
+
     collisionCooldown = collisionCooldownDuration
 end
 
--- Update function runs every frame
+-- Update function
 function script.update(dt)
     local player = ac.getCarState(1)
 
-    -- Skip first frame to initialize
+    -- Skip first frame
     if lastPlayerPos == nil then
         lastPlayerPos = player.position
         return
     end
 
-    -- Handle teleport detection (only if no collision detected this frame)
-    local posChange = lastPlayerPos:distance(player.position)
-    local collisionDetected = false
+    -- Handle engine failure
+    if player.engineLifeLeft < 1 then
+        if totalScore > highestScore then
+            highestScore = math.floor(totalScore)
+            ac.sendChatMessage("New highest score: " .. highestScore .. " points!")
+        end
+        totalScore = 0
+        comboMeter = 1
+        resetAllCarStates()
+        return
+    end
 
-    -- Update timers
     timePassed = timePassed + dt
+
+    -- Update cooldowns
     if collisionCooldown > 0 then collisionCooldown = collisionCooldown - dt end
     if nearMissCooldown > 0 then
         nearMissCooldown = nearMissCooldown - dt
-        if nearMissCooldown <= 0 then nearMissStreak = 0 end
+    elseif nearMissStreak > 0 then
+        nearMissStreak = 0
     end
 
-    -- Update combo meter
-    comboMeter = math.max(1, comboMeter - dt * 0.05)
+    -- Combo meter fade
+    local comboFadingRate = 0.2 * math.lerp(1, 0.1, math.lerpInvSat(player.speedKmh, 80, 200)) + player.wheelsOutside
+    comboMeter = math.max(1, comboMeter - dt * comboFadingRate)
     comboMeter = math.min(comboMeter, maxComboMultiplier)
 
     -- Ensure car states match sim
@@ -177,7 +193,7 @@ function script.update(dt)
         carsState[#carsState + 1] = createCarState()
     end
 
-    -- Check wheels outside track
+    -- Wheels outside check
     if wheelsWarningTimeout > 0 then
         wheelsWarningTimeout = wheelsWarningTimeout - dt
     elseif player.wheelsOutside > 0 then
@@ -185,7 +201,7 @@ function script.update(dt)
         wheelsWarningTimeout = 60
     end
 
-    -- Handle minimum speed requirement
+    -- Speed check
     if player.speedKmh < requiredSpeed then
         if dangerouslySlowTimer > 15 then
             if totalScore > highestScore then
@@ -204,57 +220,51 @@ function script.update(dt)
         dangerouslySlowTimer = 0
     end
 
-    -- Process all cars except player
-    for carIndex = 2, sim.carsCount do
-        local car = ac.getCarState(carIndex)
-        local state = carsState[carIndex]
+    -- Process cars
+    local collisionDetected = false
+    for i = 2, sim.carsCount do
+        local car = ac.getCarState(i)
+        local state = carsState[i]
         local distance = car.position:distance(player.position)
 
-        -- Robust collision detection
-        if collisionCooldown <= 0 and not state.collided then
-            local isCollision = false
-            -- Check AC collision system
-            if car.collidedWith == 1 or player.collidedWith == (carIndex - 1) then
-                isCollision = true
-            -- Fallback: Distance-based collision (less than 0.5 meters)
-            elseif distance < 0.5 then
-                isCollision = true
-            end
-
-            if isCollision then
-                state.collided = true
-                handleCollision()
-                collisionDetected = true
-                -- Debug message to confirm detection
-                addMessage('Collision detected with car ' .. carIndex, -1)
-            end
+        -- Collision detection (using earlier version's logic)
+        if car.collidedWith == 0 and collisionCooldown <= 0 then
+            state.collided = true
+            handleCollision()
+            collisionDetected = true
+            addMessage('Collision detected with car ' .. i, -1) -- Debug message
         end
 
-        -- Handle near misses
-        if not state.collided and distance < nearMissDistance and state.lastDistance >= nearMissDistance then
+        -- Near miss detection
+        if not state.collided and distance < 1.5 and state.lastDistance >= 1.5 then
             if not state.nearMiss then
                 state.nearMiss = true
+                nearMissStreak = nearMissStreak + 1
+                nearMissCooldown = nearMissCooldownDuration
                 local points = 100 * comboMeter
                 totalScore = totalScore + points
-                comboMeter = comboMeter + 0.5
-                nearMissStreak = nearMissStreak + 1
-                addMessage('Near Miss! +' .. math.floor(points) .. ' points (Streak: ' .. nearMissStreak .. ')', 1)
-                nearMissCooldown = 3
+                comboMeter = comboMeter + (distance < 1 and 3 or 1)
+                if nearMissStreak > 1 then
+                    addMessage('Near Miss x' .. nearMissStreak .. '! +' .. math.floor(points) .. ' points', 1)
+                else
+                    addMessage('Near Miss! +' .. math.floor(points) .. ' points', 1)
+                end
             end
-        elseif distance > nearMissDistance * 1.5 then
+        elseif distance > 1.5 * 1.5 then
             state.nearMiss = false
         end
 
-        -- Handle overtakes
+        -- Overtake detection
         if not state.overtaken and not state.collided then
             local posDir = (car.position - player.position):normalize()
             local posDot = math.dot(posDir, car.look)
             state.maxPosDot = math.max(state.maxPosDot, posDot)
             if posDot < -0.5 and state.maxPosDot > 0.5 then
                 state.overtaken = true
-                local points = 100 * comboMeter
-                totalScore = totalScore + points
+                local points = 10 * comboMeter
+                totalScore = totalScore + math.ceil(points)
                 comboMeter = comboMeter + 1
+                comboColor = comboColor + 90
                 addMessage('Overtake! +' .. math.floor(points) .. ' points', 1)
             end
         end
@@ -262,25 +272,13 @@ function script.update(dt)
         state.lastDistance = distance
     end
 
-    -- Handle teleport only if no collision detected
-    if not collisionDetected and posChange > teleportThreshold then
+    -- Teleport detection (only if no collision)
+    if not collisionDetected and lastPlayerPos:distance(player.position) > teleportThreshold then
         totalScore = 0
-        crashCount = 0
+        collisionCounter = 0
         comboMeter = 1
         resetAllCarStates()
-        addMessage('Teleport detected! Score and MackSauce reset.', -1)
-    end
-
-    -- Handle engine failure
-    if player.engineLifeLeft < 1 then
-        if totalScore > highestScore then
-            highestScore = math.floor(totalScore)
-            ac.sendChatMessage("New highest score: " .. highestScore .. " points!")
-        end
-        totalScore = 0
-        comboMeter = 1
-        resetAllCarStates()
-        return
+        addMessage('Teleport detected! Score and collisions reset.', -1)
     end
 
     lastPlayerPos = player.position
@@ -322,7 +320,7 @@ function script.drawUI()
 
     ui.offsetCursorY(20)
     ui.pushFont(ui.Font.Title)
-    ui.textColored('MackSauce: ' .. crashCount, rgbm(1, 0, 0, 1))
+    ui.textColored('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
     ui.popFont()
 
     ui.endOutline(rgbm(0, 0, 0, 0.3))
