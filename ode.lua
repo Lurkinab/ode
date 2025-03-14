@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with fixed collision and event detection
+-- Assetto Corsa ode.lua script with fixed collision and near miss system
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -131,31 +131,34 @@ function script.update(dt)
     dangerouslySlowTimer = 0
   end
 
-  -- Collision detection using collided
-  if player.collided and collisionCooldown <= 0 then
-    collisionCounter = collisionCounter + 1
-    totalScore = math.max(0, totalScore - 1500)
-    comboMeter = 1
-    nearMissMultiplier = 1.0
-    nearMissStreak = 0
-    addMessage('Collision: -1500')
-    addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions)
-    if collisionCounter >= maxCollisions then
-      totalScore = 0
-      collisionCounter = 0
-      nearMissMultiplier = 1.0
-      nearMissStreak = 0
-      addMessage('Too many collisions! Score reset.')
-    end
-    collisionCooldown = collisionCooldownDuration
-  end
-
-  -- Near miss and overtake logic
+  -- Collision detection
   for i = 1, sim.carsCount do 
     local car = ac.getCar(i)
     if car and car.index ~= player.index then -- Skip player car
       local state = carsState[i] or {}
       carsState[i] = state
+
+      -- Collision check
+      if car.collidedWith == player.index and collisionCooldown <= 0 then
+        if totalScore > highestScore then
+          highestScore = math.floor(totalScore)
+        end
+        collisionCounter = collisionCounter + 1
+        totalScore = math.max(0, totalScore - 1500)
+        comboMeter = 1
+        nearMissMultiplier = 1.0
+        nearMissStreak = 0
+        addMessage('Collision: -1500')
+        addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions)
+        if collisionCounter >= maxCollisions then
+          totalScore = 0
+          collisionCounter = 0
+          nearMissMultiplier = 1.0
+          nearMissStreak = 0
+          addMessage('Too many collisions! Score reset.')
+        end
+        collisionCooldown = collisionCooldownDuration
+      end
 
       -- Near miss logic with proximity check
       local distance = car.pos:distance(player.pos)
