@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with enhanced near miss logic, scoring, and chat messages
+-- Assetto Corsa ode.lua script with enhanced near miss logic and UI message system
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -9,7 +9,7 @@ local collisionCooldownDuration = 2 -- Cooldown duration in seconds
 
 -- Collision counter and score reset logic
 local collisionCounter = 0 -- Tracks the number of collisions
-local maxCollisions = 10 -- Maximum allowed collisions before score reset (changed from 5 to 10)
+local maxCollisions = 10 -- Maximum allowed collisions before score reset
 
 -- Combo multiplier cap
 local maxComboMultiplier = 5 -- Maximum combo multiplier
@@ -17,14 +17,9 @@ local maxComboMultiplier = 5 -- Maximum combo multiplier
 -- Near Miss Logic
 local nearMissStreak = 0 -- Track consecutive near misses
 local nearMissCooldown = 0 -- Cooldown timer for streak reset
-local nearMissDistance = 1.5 -- Constant distance for near miss (1.5 meters)
+local nearMissDistance = 1.0 -- Adjusted to 1.0 meter for tighter detection
 local nearMissMultiplier = 1.0 -- Separate near miss multiplier
 local nearMissResetTime = 3 -- 3 seconds to reset near miss multiplier
-
--- This function is called before event activates. Once it returns true, it’ll run:
-function script.prepare(dt)
-  return ac.getCarState(1).speedKmh > 60
-end
 
 -- Event state:
 local timePassed = 0
@@ -36,65 +31,33 @@ local dangerouslySlowTimer = 0
 local carsState = {}
 local wheelsWarningTimeout = 0
 
--- Function to add messages to the UI
+-- Message system for UI (inspired by overtake.lua)
 local messages = {}
-local glitter = {}
-local glitterCount = 0
+local maxMessages = 5 -- Maximum number of messages to display
+local messageLifetime = 3.0 -- Duration messages stay on screen (seconds)
 
-function addMessage(text, mood)
-  for i = math.min(#messages + 1, 4), 2, -1 do
-    messages[i] = messages[i - 1]
-    messages[i].targetPos = i
+function addMessage(text)
+  table.insert(messages, 1, { text = text, age = 0 })
+  if #messages > maxMessages then
+    table.remove(messages, #messages)
   end
-  messages[1] = { text = text, age = 0, targetPos = 1, currentPos = 1, mood = mood }
-  if mood == 1 then
-    for i = 1, 60 do
-      local dir = vec2(math.random() - 0.5, math.random() - 0.5)
-      glitterCount = glitterCount + 1
-      glitter[glitterCount] = { 
-        color = rgbm.new(hsv(math.random() * 360, 1, 1):rgb(), 1), 
-        pos = vec2(80, 140) + dir * vec2(40, 20),
-        velocity = dir:normalize():scale(0.2 + math.random()),
-        life = 0.5 + 0.5 * math.random()
-      }
+end
+
+-- Function to update messages
+local function updateMessages(dt)
+  comboColor = comboColor + dt * 10 * comboMeter
+  if comboColor > 360 then comboColor = comboColor - 360 end
+  for i = #messages, 1, -1 do
+    messages[i].age = messages[i].age + dt
+    if messages[i].age > messageLifetime then
+      table.remove(messages, i)
     end
   end
 end
 
--- Function to update messages and glitter effects
-local function updateMessages(dt)
-  comboColor = comboColor + dt * 10 * comboMeter
-  if comboColor > 360 then comboColor = comboColor - 360 end
-  for i = 1, #messages do
-    local m = messages[i]
-    m.age = m.age + dt
-    m.currentPos = math.applyLag(m.currentPos, m.targetPos, 0.8, dt)
-  end
-  for i = glitterCount, 1, -1 do
-    local g = glitter[i]
-    g.pos:add(g.velocity)
-    g.velocity.y = g.velocity.y + 0.02
-    g.life = g.life - dt
-    g.color.mult = math.saturate(g.life * 4)
-    if g.life < 0 then
-      if i < glitterCount then
-        glitter[i] = glitter[glitterCount]
-      end
-      glitterCount = glitterCount - 1
-    end
-  end
-  if comboMeter > 10 and math.random() > 0.98 then
-    for i = 1, math.floor(comboMeter) do
-      local dir = vec2(math.random() - 0.5, math.random() - 0.5)
-      glitterCount = glitterCount + 1
-      glitter[glitterCount] = { 
-        color = rgbm.new(hsv(math.random() * 360, 1, 1):rgb(), 1), 
-        pos = vec2(195, 75) + dir * vec2(40, 20),
-        velocity = dir:normalize():scale(0.2 + math.random()),
-        life = 0.5 + 0.5 * math.random()
-      }
-    end
-  end
+-- This function is called before event activates. Once it returns true, it’ll run:
+function script.prepare(dt)
+  return ac.getCarState(1).speedKmh > 60
 end
 
 function script.update(dt)
@@ -102,7 +65,6 @@ function script.update(dt)
   if player.engineLifeLeft < 1 then
     if totalScore > highestScore then
       highestScore = math.floor(totalScore)
-      ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
     end
     totalScore = 0
     comboMeter = 1
@@ -125,8 +87,7 @@ function script.update(dt)
     if nearMissCooldown <= 0 then
       nearMissStreak = 0
       nearMissMultiplier = 1.0
-      addMessage('Near Miss Multiplier Reset!', -1)
-      ac.sendChatMessage('Near Miss Multiplier Reset!')
+      addMessage('Near Miss Multiplier Reset!')
     end
   end
 
@@ -145,7 +106,7 @@ function script.update(dt)
   if wheelsWarningTimeout > 0 then
     wheelsWarningTimeout = wheelsWarningTimeout - dt
   elseif player.wheelsOutside > 0 then
-    addMessage('Car is outside', -1)
+    addMessage('Car is outside')
     wheelsWarningTimeout = 60
   end
 
@@ -153,7 +114,6 @@ function script.update(dt)
     if dangerouslySlowTimer > 15 then    
       if totalScore > highestScore then
         highestScore = math.floor(totalScore)
-        ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
       end
       totalScore = 0
       comboMeter = 1
@@ -161,7 +121,7 @@ function script.update(dt)
       nearMissStreak = 0
       collisionCounter = 0
     else
-      if dangerouslySlowTimer == 0 then addMessage('Too slow!', -1) end
+      if dangerouslySlowTimer == 0 then addMessage('Too slow!') end
       dangerouslySlowTimer = dangerouslySlowTimer + dt
       comboMeter = 1
       return
@@ -174,18 +134,18 @@ function script.update(dt)
     local car = ac.getCarState(i)
     local state = carsState[i]
 
-    -- Near miss logic
-    if car.pos:closerToThan(player.pos, nearMissDistance) then
-      if not state.nearMiss then
+    -- Near miss logic with improved detection
+    if car.pos:closerToThan(player.pos, nearMissDistance) and math.dot(car.velocity:normalize(), player.velocity:normalize()) > 0.5 then
+      if not state.nearMiss or (os.time() - (state.lastNearMissTime or 0) > 1) then -- Debounce to avoid rapid triggers
         state.nearMiss = true
+        state.lastNearMissTime = os.time()
         nearMissStreak = nearMissStreak + 1
         nearMissMultiplier = math.min(nearMissMultiplier + 0.5, 5.0) -- Increment by 0.5, cap at 5x
-        nearMissCooldown = nearMissResetTime -- Reset cooldown to 3 seconds
-        local nearMissPoints = math.ceil(50 * comboMeter * nearMissMultiplier) -- 50 base points
+        nearMissCooldown = nearMissResetTime
+        local nearMissPoints = math.ceil(50 * comboMeter * nearMissMultiplier)
         totalScore = totalScore + nearMissPoints
         comboMeter = comboMeter + 1
-        addMessage('Near Miss! +' .. nearMissPoints .. ' (Streak: ' .. nearMissStreak .. ')', 1)
-        ac.sendChatMessage('Near miss x' .. nearMissStreak) -- Chat message with streak
+        addMessage('Near Miss! +' .. nearMissPoints .. ' (x' .. nearMissStreak .. ')')
       end
     else
       state.nearMiss = false
@@ -195,23 +155,20 @@ function script.update(dt)
     if car.collidedWith == 0 and collisionCooldown <= 0 then
       if totalScore > highestScore then
         highestScore = math.floor(totalScore)
-        ac.sendChatMessage("New highest score: " .. highestScore .. " points!") -- Broadcast to all players
       end
       collisionCounter = collisionCounter + 1
       totalScore = math.max(0, totalScore - 1500) -- Increased from -500 to -1500
       comboMeter = 1
       nearMissMultiplier = 1.0
       nearMissStreak = 0
-      addMessage('Collision: -1500 points', -1)
-      ac.sendChatMessage('Collision: -1500') -- Chat message for collision
-      addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, -1)
+      addMessage('Collision: -1500')
+      addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions)
       if collisionCounter >= maxCollisions then
-        ac.sendChatMessage("Too many collisions! Score reset.")
         totalScore = 0
         collisionCounter = 0
         nearMissMultiplier = 1.0
         nearMissStreak = 0
-        addMessage('Too many collisions! Score reset.', -1)
+        addMessage('Too many collisions! Score reset.')
       end
       collisionCooldown = collisionCooldownDuration
     end
@@ -231,8 +188,7 @@ function script.update(dt)
           comboMeter = comboMeter + 1
           comboColor = comboColor + 90
           state.overtaken = true
-          addMessage('Overtake! +50 PTS', 1)
-          ac.sendChatMessage('Overtake! +50 PTS') -- Chat message for overtake
+          addMessage('Overtake! +50')
         end
       end
     else
@@ -283,6 +239,16 @@ function script.drawUI()
   ui.textColored('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
   ui.text('Near Miss Multiplier: ' .. string.format('%.1fx', nearMissMultiplier))
   ui.popFont()
+
+  -- Draw temporary messages below collision counter
+  ui.offsetCursorY(20)
+  for i, msg in ipairs(messages) do
+    local alpha = 1.0 - (msg.age / messageLifetime)
+    ui.pushStyleVar(ui.StyleVar.Alpha, alpha)
+    ui.text(msg.text)
+    ui.popStyleVar()
+    ui.offsetCursorY(20)
+  end
 
   ui.endOutline(rgbm(0, 0, 0, 0.3))
   ui.endTransparentWindow()
