@@ -11,7 +11,7 @@ local crashCount = 0 -- MackSauce counter (tracks collisions, resets on teleport
 -- Scoring system
 local totalScore = 0
 local comboMeter = 1 -- Overtake multiplier
-local nearMissMultiplier = 1 -- Separate near miss multiplier
+local nearMissMultiplier = 1 -- Near miss multiplier (mirrors combo logic)
 local maxComboMultiplier = 10 -- Applies to both
 local highestScore = 0
 
@@ -48,7 +48,6 @@ function createCarState()
     return {
         overtaken = false,
         collided = false,
-        nearMissTriggered = false, -- Tracks if near miss was counted this frame
         maxPosDot = 0,
         lastDistance = 1000,
         drivingAlong = true
@@ -136,11 +135,14 @@ function handleCollision(source)
         totalScore = math.max(0, totalScore - collisionPenalty)
     end
     comboMeter = 1
-    nearMissMultiplier = 1 -- Reset near miss multiplier on collision
+    nearMissMultiplier = 1
+    nearMissStreak = 0
 
     addMessage('Collision: -' .. collisionPenalty .. ' points', -1)
     addMessage('MackSauce: ' .. crashCount, -1)
     addMessage('Collision detected (' .. source .. ')', -1)
+
+    collisionCooldown = collisionCooldownDuration
 end
 
 -- Update function
@@ -162,6 +164,7 @@ function script.update(dt)
         totalScore = 0
         comboMeter = 1
         nearMissMultiplier = 1
+        nearMissStreak = 0
         crashCount = 0
         resetAllCarStates()
         return
@@ -170,20 +173,24 @@ function script.update(dt)
     timePassed = timePassed + dt
 
     -- Update cooldowns
-    if collisionCooldown > 0 then collisionCooldown = collisionCooldown - dt end
+    if collisionCooldown > 0 then
+        collisionCooldown = collisionCooldown - dt
+    end
     if nearMissCooldown > 0 then
         nearMissCooldown = nearMissCooldown - dt
         if nearMissCooldown <= 0 then
             nearMissStreak = 0
             nearMissMultiplier = 1
+            ac.debug("Near miss cooldown reset", nearMissCooldown)
         end
     end
 
-    -- Combo meter fade (only affects overtake combo)
-    local comboFadingRate = 0.2 * math.lerp(1, 0.1, math.lerpInvSat(player.speedKmh, 80, 200)) + player.wheelsOutside
-    comboMeter = math.max(1, comboMeter - dt * comboFadingRate)
-    comboMeter = math.min(comboMeter, maxComboMultiplier)
-    nearMissMultiplier = math.min(nearMissMultiplier, maxComboMultiplier)
+    -- Combo meter fade
+    local fadingRate = 0.2 * math.lerp(1, 0.1, math.lerpInvSat(player.speedKmh, 80, 200)) + player.wheelsOutside
+    comboMeter = math.max(1, comboMeter - dt * fadingRate)
+    comboMeter = math.min(comboMeter + (dt * 0.1), maxComboMultiplier) -- Slight boost to test
+    nearMissMultiplier = math.max(1, nearMissMultiplier - dt * fadingRate)
+    nearMissMultiplier = math.min(nearMissMultiplier + (dt * 0.1), maxComboMultiplier) -- Slight boost to test
 
     -- Ensure car states match sim
     local sim = ac.getSimState()
@@ -209,6 +216,7 @@ function script.update(dt)
             totalScore = 0
             comboMeter = 1
             nearMissMultiplier = 1
+            nearMissStreak = 0
             crashCount = 0
         else
             if dangerouslySlowTimer == 0 then addMessage('Too slow!', -1) end
@@ -223,6 +231,7 @@ function script.update(dt)
 
     -- Teleport detection
     local posChange = lastPlayerPos:distance(player.position)
+    ac.debug("Teleport check", posChange)
     if posChange > teleportThreshold then
         totalScore = 0
         crashCount = 0
@@ -241,59 +250,52 @@ function script.update(dt)
             handleCollision("wall")
             ac.debug("Player collidedWith (wall)", player.collidedWith)
         end
-    end
 
-    local nearMissThisFrame = 0
-    for i = 2, sim.carsCount do
-        local car = ac.getCarState(i)
-        local state = carsState[i]
-        local distance = car.position:distance(player.position)
+        for i = 2, sim.carsCount do
+            local car = ac.getCarState(i)
+            local state = carsState[i]
+            local distance = car.position:distance(player.position)
 
-        -- Debug collision data
-        ac.debug("Car " .. i .. " collidedWith", car.collidedWith)
-        ac.debug("Distance to car " .. i, distance)
+            -- Debug collision data
+            ac.debug("Car " .. i .. " collidedWith", car.collidedWith)
+            ac.debug("Player collidedWith", player.collidedWith)
+            ac.debug("Distance to car " .. i, distance)
 
-        -- Car collision check
-        if collisionCooldown <= 0 and car.collidedWith == 0 then
-            state.collided = true
-            handleCollision("car " .. i)
-        end
-
-        -- Near miss detection (within 1 meter)
-        if not state.collided and distance < 1 and not state.nearMissTriggered then
-            nearMissThisFrame = nearMissThisFrame + 1
-            state.nearMissTriggered = true -- Prevent double-counting this frame
-            nearMissStreak = nearMissStreak + 1
-            nearMissCooldown = nearMissCooldownDuration
-            nearMissMultiplier = nearMissMultiplier + 1 -- Increase multiplier
-        elseif distance >= 1 then
-            state.nearMissTriggered = false -- Reset for next frame
-        end
-
-        -- Overtake detection
-        if not state.overtaken and not state.collided then
-            local posDir = (car.position - player.position):normalize()
-            local posDot = math.dot(posDir, car.look)
-            state.maxPosDot = math.max(state.maxPosDot, posDot)
-            if posDot < -0.5 and state.maxPosDot > 0.5 then
-                state.overtaken = true
-                local points = 10 * comboMeter * nearMissMultiplier -- Combine multipliers
-                totalScore = totalScore + math.ceil(points)
-                comboMeter = comboMeter + 1
-                comboColor = comboColor + 90
-                addMessage('Overtake! +' .. math.floor(points) .. ' points', 1)
+            -- Car collision check
+            if player.collidedWith == (i - 1) then
+                state.collided = true
+                handleCollision("car " .. i)
             end
-        end
 
-        state.lastDistance = distance
-    end
+            -- Near miss detection (within 1 meter)
+            if not state.collided and distance < 1 then
+                nearMissStreak = nearMissStreak + 1
+                nearMissMultiplier = math.min(nearMissMultiplier + 1, maxComboMultiplier)
+                nearMissCooldown = nearMissCooldownDuration
+                ac.debug("Near miss detected", {streak = nearMissStreak, multiplier = nearMissMultiplier})
+                if nearMissStreak == 1 then
+                    addMessage('Near Miss', 2)
+                else
+                    addMessage('Near Miss x' .. nearMissStreak, 2)
+                end
+            end
 
-    -- Display near miss message if any occurred this frame
-    if nearMissThisFrame > 0 then
-        if nearMissStreak > 1 then
-            addMessage('Near Miss x' .. nearMissStreak, 2) -- Green text (mood 2)
-        else
-            addMessage('Near Miss', 2)
+            -- Overtake detection
+            if not state.overtaken and not state.collided then
+                local posDir = (car.position - player.position):normalize()
+                local posDot = math.dot(posDir, car.look)
+                state.maxPosDot = math.max(state.maxPosDot, posDot)
+                if posDot < -0.5 and state.maxPosDot > 0.5 then
+                    state.overtaken = true
+                    local points = 10 * comboMeter * nearMissMultiplier
+                    totalScore = totalScore + math.ceil(points)
+                    comboMeter = math.min(comboMeter + 1, maxComboMultiplier)
+                    comboColor = comboColor + 90
+                    addMessage('Overtake! +' .. math.floor(points) .. ' points', 1)
+                end
+            end
+
+            state.lastDistance = distance
         end
     end
 
