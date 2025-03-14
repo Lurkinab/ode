@@ -10,19 +10,20 @@ local crashCount = 0 -- MackSauce counter (tracks collisions, resets on teleport
 
 -- Scoring system
 local totalScore = 0
-local comboMeter = 1
-local maxComboMultiplier = 10
+local comboMeter = 1 -- Overtake multiplier
+local nearMissMultiplier = 1 -- Separate near miss multiplier
+local maxComboMultiplier = 10 -- Applies to both
 local highestScore = 0
 
 -- Timer states
 local timePassed = 0
 local dangerouslySlowTimer = 0
 local wheelsWarningTimeout = 0
+local nearMissCooldown = 0 -- For resetting near miss streak
+local nearMissCooldownDuration = 3 -- 3 seconds
 
 -- Near miss tracking
 local nearMissStreak = 0
-local nearMissCooldown = 0
-local nearMissCooldownDuration = 3 -- Cooldown duration in seconds
 
 -- Teleport detection
 local lastPlayerPos = nil
@@ -47,7 +48,7 @@ function createCarState()
     return {
         overtaken = false,
         collided = false,
-        nearMiss = false,
+        nearMissTriggered = false, -- Tracks if near miss was counted this frame
         maxPosDot = 0,
         lastDistance = 1000,
         drivingAlong = true
@@ -135,12 +136,11 @@ function handleCollision(source)
         totalScore = math.max(0, totalScore - collisionPenalty)
     end
     comboMeter = 1
+    nearMissMultiplier = 1 -- Reset near miss multiplier on collision
 
     addMessage('Collision: -' .. collisionPenalty .. ' points', -1)
     addMessage('MackSauce: ' .. crashCount, -1)
-    addMessage('Collision detected (' .. source .. ')', -1) -- Debug source
-
-    collisionCooldown = collisionCooldownDuration
+    addMessage('Collision detected (' .. source .. ')', -1)
 end
 
 -- Update function
@@ -161,6 +161,7 @@ function script.update(dt)
         end
         totalScore = 0
         comboMeter = 1
+        nearMissMultiplier = 1
         crashCount = 0
         resetAllCarStates()
         return
@@ -172,14 +173,17 @@ function script.update(dt)
     if collisionCooldown > 0 then collisionCooldown = collisionCooldown - dt end
     if nearMissCooldown > 0 then
         nearMissCooldown = nearMissCooldown - dt
-    elseif nearMissStreak > 0 then
-        nearMissStreak = 0
+        if nearMissCooldown <= 0 then
+            nearMissStreak = 0
+            nearMissMultiplier = 1
+        end
     end
 
-    -- Combo meter fade
+    -- Combo meter fade (only affects overtake combo)
     local comboFadingRate = 0.2 * math.lerp(1, 0.1, math.lerpInvSat(player.speedKmh, 80, 200)) + player.wheelsOutside
     comboMeter = math.max(1, comboMeter - dt * comboFadingRate)
     comboMeter = math.min(comboMeter, maxComboMultiplier)
+    nearMissMultiplier = math.min(nearMissMultiplier, maxComboMultiplier)
 
     -- Ensure car states match sim
     local sim = ac.getSimState()
@@ -204,12 +208,14 @@ function script.update(dt)
             end
             totalScore = 0
             comboMeter = 1
+            nearMissMultiplier = 1
             crashCount = 0
         else
             if dangerouslySlowTimer == 0 then addMessage('Too slow!', -1) end
         end
         dangerouslySlowTimer = dangerouslySlowTimer + dt
         comboMeter = 1
+        nearMissMultiplier = 1
         return
     else
         dangerouslySlowTimer = 0
@@ -221,6 +227,8 @@ function script.update(dt)
         totalScore = 0
         crashCount = 0
         comboMeter = 1
+        nearMissMultiplier = 1
+        nearMissStreak = 0
         resetAllCarStates()
         addMessage('Teleport detected! Score and MackSauce reset.', -1)
         ac.debug("Teleport triggered", posChange)
@@ -229,12 +237,13 @@ function script.update(dt)
     -- Process collisions and cars
     if collisionCooldown <= 0 then
         -- Wall collision check
-        if player.collidedWith ~= -1 then -- -1 means no collision
+        if player.collidedWith ~= -1 then
             handleCollision("wall")
             ac.debug("Player collidedWith (wall)", player.collidedWith)
         end
     end
 
+    local nearMissThisFrame = 0
     for i = 2, sim.carsCount do
         local car = ac.getCarState(i)
         local state = carsState[i]
@@ -242,32 +251,23 @@ function script.update(dt)
 
         -- Debug collision data
         ac.debug("Car " .. i .. " collidedWith", car.collidedWith)
-        ac.debug("Player collidedWith", player.collidedWith)
         ac.debug("Distance to car " .. i, distance)
 
-        -- Car collision check (old script logic)
+        -- Car collision check
         if collisionCooldown <= 0 and car.collidedWith == 0 then
             state.collided = true
             handleCollision("car " .. i)
         end
 
-        -- Near miss detection
-        if not state.collided and distance < 1.5 and state.lastDistance >= 1.5 then
-            if not state.nearMiss then
-                state.nearMiss = true
-                nearMissStreak = nearMissStreak + 1
-                nearMissCooldown = nearMissCooldownDuration
-                local points = 100 * comboMeter
-                totalScore = totalScore + points
-                comboMeter = comboMeter + (distance < 1 and 3 or 1)
-                if nearMissStreak > 1 then
-                    addMessage('Near Miss x' .. nearMissStreak .. '! +' .. math.floor(points) .. ' points', 1)
-                else
-                    addMessage('Near Miss! +' .. math.floor(points) .. ' points', 1)
-                end
-            end
-        elseif distance > 1.5 * 1.5 then
-            state.nearMiss = false
+        -- Near miss detection (within 1 meter)
+        if not state.collided and distance < 1 and not state.nearMissTriggered then
+            nearMissThisFrame = nearMissThisFrame + 1
+            state.nearMissTriggered = true -- Prevent double-counting this frame
+            nearMissStreak = nearMissStreak + 1
+            nearMissCooldown = nearMissCooldownDuration
+            nearMissMultiplier = nearMissMultiplier + 1 -- Increase multiplier
+        elseif distance >= 1 then
+            state.nearMissTriggered = false -- Reset for next frame
         end
 
         -- Overtake detection
@@ -277,7 +277,7 @@ function script.update(dt)
             state.maxPosDot = math.max(state.maxPosDot, posDot)
             if posDot < -0.5 and state.maxPosDot > 0.5 then
                 state.overtaken = true
-                local points = 10 * comboMeter
+                local points = 10 * comboMeter * nearMissMultiplier -- Combine multipliers
                 totalScore = totalScore + math.ceil(points)
                 comboMeter = comboMeter + 1
                 comboColor = comboColor + 90
@@ -286,6 +286,15 @@ function script.update(dt)
         end
 
         state.lastDistance = distance
+    end
+
+    -- Display near miss message if any occurred this frame
+    if nearMissThisFrame > 0 then
+        if nearMissStreak > 1 then
+            addMessage('Near Miss x' .. nearMissStreak, 2) -- Green text (mood 2)
+        else
+            addMessage('Near Miss', 2)
+        end
     end
 
     lastPlayerPos = player.position
@@ -303,6 +312,7 @@ function script.drawUI()
     local colorGrey = rgbm(0.7, 0.7, 0.7, 1)
     local colorAccent = rgbm.new(hsv(speedRelative * 120, 1, 1):rgb(), 1)
     local colorCombo = rgbm.new(hsv(comboColor, math.saturate(comboMeter / 10), 1):rgb(), math.saturate(comboMeter / 4))
+    local colorNearMiss = rgbm(0, 1, 0, 1) -- Green for near miss
 
     ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 600, 100), vec2(400, 400))
     ui.beginOutline()
@@ -318,6 +328,8 @@ function script.drawUI()
     ui.sameLine(0, 40)
     ui.beginRotation()
     ui.textColored(math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
+    ui.sameLine(0, 40) -- Position near miss multiplier next to combo
+    ui.textColored(math.ceil(nearMissMultiplier * 10) / 10 .. 'x', colorNearMiss)
     if comboMeter > 20 then
         ui.endRotation(math.sin(comboMeter / 180 * 3141.5) * 3 * math.lerpInvSat(comboMeter, 20, 30) + 90)
     else
@@ -329,6 +341,17 @@ function script.drawUI()
     ui.pushFont(ui.Font.Title)
     ui.textColored('MackSauce: ' .. crashCount, rgbm(1, 0, 0, 1))
     ui.popFont()
+
+    -- Custom rendering for green near miss messages
+    for i = 1, #messages do
+        local m = messages[i]
+        if m.mood == 2 then -- Green text for near miss
+            ui.pushFont(ui.Font.Title)
+            ui.setCursor(vec2(80, 100 + m.currentPos * 30))
+            ui.textColored(m.text, rgbm(0, 1, 0, 1 - m.age / 2))
+            ui.popFont()
+        end
+    end
 
     ui.endOutline(rgbm(0, 0, 0, 0.3))
     ui.endTransparentWindow()
