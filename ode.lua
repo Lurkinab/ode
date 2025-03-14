@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with enhanced UI
+-- Assetto Corsa ode.lua script with enhanced UI and drawn background
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -226,8 +226,57 @@ function script.drawUI()
   local windowPos = vec2(uiState.windowSize.x * 0.5 - 600, 100)
   local windowSize = vec2(400, 400)
 
-  -- Draw the background PNG
-  ui.drawImage('background.png', windowPos, windowPos + windowSize, true, rgbm(1, 1, 1, 0.9))
+  -- Draw the background using primitives
+  -- Bottom parallelogram (light gray, #a0a0a0)
+  local bottomColor = rgbm(0.627, 0.627, 0.627, 1) -- #a0a0a0
+  local bottomHeight = windowSize.y * 0.3
+  local bottomSkew = windowSize.x * 0.2
+  ui.drawTriangleFilled(
+    windowPos + vec2(0, windowSize.y - bottomHeight), -- Bottom-left
+    windowPos + vec2(windowSize.x, windowSize.y - bottomHeight), -- Bottom-right
+    windowPos + vec2(bottomSkew, windowSize.y), -- Bottom-left skewed
+    bottomColor
+  )
+  ui.drawTriangleFilled(
+    windowPos + vec2(windowSize.x, windowSize.y - bottomHeight), -- Bottom-right
+    windowPos + vec2(windowSize.x - bottomSkew, windowSize.y), -- Bottom-right skewed
+    windowPos + vec2(bottomSkew, windowSize.y), -- Bottom-left skewed
+    bottomColor
+  )
+
+  -- Middle parallelogram (medium gray, #979797)
+  local middleColor = rgbm(0.592, 0.592, 0.592, 1) -- #979797
+  local middleHeight = windowSize.y * 0.2
+  local middleOffsetY = windowSize.y * 0.35
+  ui.drawTriangleFilled(
+    windowPos + vec2(windowSize.x * 0.2, windowSize.y - middleOffsetY - middleHeight), -- Top-left
+    windowPos + vec2(windowSize.x, windowSize.y - middleOffsetY - middleHeight), -- Top-right
+    windowPos + vec2(windowSize.x * 0.2 + bottomSkew, windowSize.y - middleOffsetY), -- Bottom-left skewed
+    middleColor
+  )
+  ui.drawTriangleFilled(
+    windowPos + vec2(windowSize.x, windowSize.y - middleOffsetY - middleHeight), -- Top-right
+    windowPos + vec2(windowSize.x - bottomSkew, windowSize.y - middleOffsetY), -- Bottom-right skewed
+    windowPos + vec2(windowSize.x * 0.2 + bottomSkew, windowSize.y - middleOffsetY), -- Bottom-left skewed
+    middleColor
+  )
+
+  -- Top parallelogram (dark gray, #070707)
+  local topColor = rgbm(0.027, 0.027, 0.027, 1) -- #070707
+  local topHeight = windowSize.y * 0.15
+  local topOffsetY = windowSize.y * 0.55
+  ui.drawTriangleFilled(
+    windowPos + vec2(windowSize.x * 0.4, windowSize.y - topOffsetY - topHeight), -- Top-left
+    windowPos + vec2(windowSize.x, windowSize.y - topOffsetY - topHeight), -- Top-right
+    windowPos + vec2(windowSize.x * 0.4 + bottomSkew, windowSize.y - topOffsetY), -- Bottom-left skewed
+    topColor
+  )
+  ui.drawTriangleFilled(
+    windowPos + vec2(windowSize.x, windowSize.y - topOffsetY - topHeight), -- Top-right
+    windowPos + vec2(windowSize.x - bottomSkew, windowSize.y - topOffsetY), -- Bottom-right skewed
+    windowPos + vec2(windowSize.x * 0.4 + bottomSkew, windowSize.y - topOffsetY), -- Bottom-left skewed
+    topColor
+  )
 
   -- Add a semi-transparent overlay to improve text readability
   ui.drawRectFilled(windowPos, windowPos + windowSize, rgbm(0, 0, 0, 0.5))
