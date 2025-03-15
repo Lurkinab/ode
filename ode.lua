@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with Proximity rename, 5s cooldown, and PTS box
+-- Assetto Corsa ode.lua script with Proximity rename, 5s cooldown, and PTS box fix
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -226,11 +226,13 @@ function script.drawUI()
 
   -- Points in a non-transparent white box with black text
   ui.offsetCursorY(10)
-  ui.beginOpaqueWindow('scoreBox', vec2(uiState.windowSize.x * 0.5 - 650, 150), vec2(300, 60), rgbm(1, 1, 1, 1)) -- White background
+  -- Using beginTransparentWindow with full opacity to simulate an opaque window
+  ui.beginTransparentWindow('scoreBox', vec2(uiState.windowSize.x * 0.5 - 650, 150), vec2(300, 60))
+  ui.drawRectFilled(vec2(0, 0), vec2(300, 60), rgbm(1, 1, 1, 1)) -- White background
   ui.pushFont(ui.Font.Huge)
   ui.textColored(totalScore .. ' PTS', rgbm(0, 0, 0, 1)) -- Black text
   ui.popFont()
-  ui.endOpaqueWindow()
+  ui.endTransparentWindow()
 
   -- Personal Best
   ui.offsetCursorY(70) -- Adjusted to account for the box height
