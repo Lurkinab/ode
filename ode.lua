@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with reorganized UI and larger message text
+-- Assetto Corsa ode.lua script with bold multipliers, Proximity rename, and PTS box
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -14,13 +14,14 @@ local maxCollisions = 10
 -- Combo multiplier cap
 local maxComboMultiplier = 5
 
--- Near Miss Logic
-local nearMissStreak = 0
-local nearMissCooldown = 0
-local nearMissDistance = 3.0
-local nearMissMultiplier = 1.0
-local nearMissResetTime = 3
-local lastNearMiss = 0
+-- Proximity Logic (formerly Near Miss)
+local proximityStreak = 0
+local proximityCooldown = 0
+local proximityDistance = 3.0
+local proximityMultiplier = 1.0
+local proximityResetTime = 5 -- Changed from 3 to 5 seconds
+local lastProximity = 0
+local proximityColor = 0 -- For color cycling
 
 -- Event state:
 local timePassed = 0
@@ -46,7 +47,9 @@ end
 
 local function updateMessages(dt)
   comboColor = comboColor + dt * 10 * comboMeter
+  proximityColor = proximityColor + dt * 8 * proximityMultiplier -- Slightly slower color cycle than combo
   if comboColor > 360 then comboColor = comboColor - 360 end
+  if proximityColor > 360 then proximityColor = proximityColor - 360 end
   for i = #messages, 1, -1 do
     messages[i].age = messages[i].age + dt
     if messages[i].age > messageLifetime then
@@ -67,8 +70,8 @@ function script.update(dt)
     end
     totalScore = 0
     comboMeter = 1
-    nearMissMultiplier = 1.0
-    nearMissStreak = 0
+    proximityMultiplier = 1.0
+    proximityStreak = 0
     collisionCounter = 0
     return
   end
@@ -79,12 +82,12 @@ function script.update(dt)
     collisionCooldown = collisionCooldown - dt
   end
 
-  if nearMissCooldown > 0 then
-    nearMissCooldown = nearMissCooldown - dt
-    if nearMissCooldown <= 0 then
-      nearMissStreak = 0
-      nearMissMultiplier = 1.0
-      addMessage('Near Miss Multiplier Reset!')
+  if proximityCooldown > 0 then
+    proximityCooldown = proximityCooldown - dt
+    if proximityCooldown <= 0 then
+      proximityStreak = 0
+      proximityMultiplier = 1.0
+      addMessage('Proximity Multiplier Reset!')
     end
   end
 
@@ -111,8 +114,8 @@ function script.update(dt)
       end
       totalScore = 0
       comboMeter = 1
-      nearMissMultiplier = 1.0
-      nearMissStreak = 0
+      proximityMultiplier = 1.0
+      proximityStreak = 0
       collisionCounter = 0
     else
       if dangerouslySlowTimer == 0 then addMessage('Too slow!') end
@@ -134,15 +137,15 @@ function script.update(dt)
       collisionCounter = collisionCounter + 1
       totalScore = math.max(0, totalScore - 1500)
       comboMeter = 1
-      nearMissMultiplier = 1.0
-      nearMissStreak = 0
+      proximityMultiplier = 1.0
+      proximityStreak = 0
       addMessage('Collision: -1500', rgbm(1, 0, 0, 1))
       addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
       if collisionCounter >= maxCollisions then
         totalScore = 0
         collisionCounter = 0
-        nearMissMultiplier = 1.0
-        nearMissStreak = 0
+        proximityMultiplier = 1.0
+        proximityStreak = 0
         addMessage('Too many collisions! Score reset.', rgbm(1, 0, 0, 1))
       end
       collisionCooldown = collisionCooldownDuration
@@ -156,17 +159,17 @@ function script.update(dt)
       carsState[i] = state
 
       local distance = car.pos:distance(player.pos)
-      if distance <= nearMissDistance and distance > 0.1 then
+      if distance <= proximityDistance and distance > 0.1 then
         local currentTime = os.time()
-        if currentTime - lastNearMiss >= 1 then
-          nearMissStreak = nearMissStreak + 1
-          nearMissMultiplier = math.min(nearMissMultiplier + 0.5, 5.0)
-          nearMissCooldown = nearMissResetTime
-          lastNearMiss = currentTime
-          local nearMissPoints = math.ceil(50 * comboMeter * nearMissMultiplier)
-          totalScore = totalScore + nearMissPoints
+        if currentTime - lastProximity >= 1 then
+          proximityStreak = proximityStreak + 1
+          proximityMultiplier = math.min(proximityMultiplier + 0.5, 5.0)
+          proximityCooldown = proximityResetTime
+          lastProximity = currentTime
+          local proximityPoints = math.ceil(50 * comboMeter * proximityMultiplier)
+          totalScore = totalScore + proximityPoints
           comboMeter = comboMeter + (distance < 1.0 and 3 or 1)
-          addMessage('Near Miss! +' .. nearMissPoints .. ' x' .. nearMissStreak, rgbm(0.576, 0.439, 0.858, 1))
+          addMessage('Proximity! +' .. proximityPoints .. ' x' .. proximityStreak, rgbm(0.576, 0.439, 0.858, 1))
         end
       end
 
@@ -180,7 +183,7 @@ function script.update(dt)
           local posDot = math.dot(posDir, car.look)
           state.maxPosDot = math.max(state.maxPosDot or -1, posDot)
           if posDot < -0.5 and state.maxPosDot > 0.5 then
-            totalScore = totalScore + math.ceil(50 * comboMeter * nearMissMultiplier)
+            totalScore = totalScore + math.ceil(50 * comboMeter * proximityMultiplier)
             comboMeter = comboMeter + 1
             comboColor = comboColor + 90
             state.overtaken = true
@@ -209,25 +212,30 @@ function script.drawUI()
   local colorGrey = rgbm(0.7, 0.7, 0.7, 1)
   local colorAccent = rgbm.new(hsv(speedRelative * 120, 1, 1):rgb(), 1)
   local colorCombo = rgbm.new(hsv(comboColor, math.saturate(comboMeter / 10), 1):rgb(), math.saturate(comboMeter / 4))
+  local colorProximity = rgbm.new(hsv(proximityColor, math.saturate(proximityMultiplier / 10), 1):rgb(), math.saturate(proximityMultiplier / 4))
 
   ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 600, 100), vec2(400, 400))
   ui.beginOutline()
 
-  -- Multipliers side by side at the top
+  -- Multipliers side by side at the top with bold text and color cycling
   ui.pushFont(ui.Font.Title)
-  ui.text('Near Miss Multiplier: ' .. string.format('%.1fx', nearMissMultiplier))
+  ui.pushStyleVar(ui.StyleVar.TextBold, true) -- Make text bolder
+  ui.textColored('Proximity Multiplier: ' .. string.format('%.1fx', proximityMultiplier), colorProximity)
   ui.sameLine(0, 40)
   ui.textColored('Combo: ' .. math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
+  ui.popStyleVar()
   ui.popFont()
 
-  -- Points below multipliers
+  -- Points in a non-transparent white box with black text
   ui.offsetCursorY(10)
+  ui.beginOpaqueWindow('scoreBox', vec2(uiState.windowSize.x * 0.5 - 650, 150), vec2(300, 60), rgbm(1, 1, 1, 1)) -- White background
   ui.pushFont(ui.Font.Huge)
-  ui.text(totalScore .. ' pts')
+  ui.textColored(totalScore .. ' PTS', rgbm(0, 0, 0, 1)) -- Black text
   ui.popFont()
+  ui.endOpaqueWindow()
 
-  -- Personal Best (moved from top)
-  ui.offsetCursorY(20)
+  -- Personal Best
+  ui.offsetCursorY(70) -- Adjusted to account for the box height
   ui.pushFont(ui.Font.Title)
   ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
   ui.text('Personal Best: ' .. highestScore)
@@ -240,14 +248,14 @@ function script.drawUI()
 
   -- Messages with larger text
   ui.offsetCursorY(20)
-  ui.pushFont(ui.Font.Title) -- Larger font for messages
-  ui.pushStyleVar(ui.StyleVar.ItemSpacing, vec2(0, 10)) -- Increased spacing for larger text
+  ui.pushFont(ui.Font.Title)
+  ui.pushStyleVar(ui.StyleVar.ItemSpacing, vec2(0, 10))
   for i, msg in ipairs(messages) do
     local alpha = 1.0 - (msg.age / messageLifetime)
     ui.pushStyleVar(ui.StyleVar.Alpha, alpha)
     ui.textColored(msg.text, msg.color)
     ui.popStyleVar()
-    ui.offsetCursorY(30) -- Increased spacing for larger font
+    ui.offsetCursorY(30)
   end
   ui.popStyleVar()
   ui.popFont()
