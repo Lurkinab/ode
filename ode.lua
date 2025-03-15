@@ -1,7 +1,7 @@
 -- Assetto Corsa ode.lua script with transparent UI and color-changing Proximity
 
 -- Event configuration:
-local requiredSpeed = 50
+local requiredSpeed = 55
 
 -- Collision cooldown state
 local collisionCooldown = 0
@@ -219,19 +219,20 @@ function script.drawUI()
   ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 600, 100), vec2(400, 400))
   ui.beginOutline()
 
-  -- PB at top left
+  -- PB further left
   ui.pushFont(ui.Font.Title)
   ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
+  ui.setCursorX(10) -- Move PB to the far left with a 10-pixel offset
   ui.text('PB: ' .. highestScore)
   ui.popStyleVar()
-  ui.sameLine(0, 20) -- Spacing before multipliers
+  ui.sameLine(0, 50) -- Increase spacing to 50 pixels to push multipliers further right
 
   -- Multipliers centered above PTS
   local windowWidth = 400
   local proximityWidth = ui.measureText('Proximity: ' .. string.format('%.1fx', proximityMultiplier))
   local comboWidth = ui.measureText('Combo: ' .. math.ceil(comboMeter * 10) / 10 .. 'x')
   local totalWidth = proximityWidth + comboWidth + 40 -- 40 is the sameLine spacing
-  local startX = (windowWidth - totalWidth) / 2 + ui.getCursorX() -- Adjust for PB position
+  local startX = (windowWidth - totalWidth) / 2 + ui.getCursorX() -- Adjust for PB and spacing
   ui.setCursorX(startX)
   ui.textColored('Proximity: ' .. string.format('%.1fx', proximityMultiplier), colorProximity)
   ui.sameLine(0, 40)
