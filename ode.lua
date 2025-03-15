@@ -1,7 +1,7 @@
 -- Assetto Corsa ode.lua script with transparent UI and color-changing Proximity
 
 -- Event configuration:
-local requiredSpeed = 55
+local requiredSpeed = 50
 
 -- Collision cooldown state
 local collisionCooldown = 0
