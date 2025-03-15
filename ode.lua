@@ -216,19 +216,19 @@ function script.drawUI()
   local colorCombo = rgbm.new(hsv(comboColor, math.saturate(comboMeter / 10), 1):rgb(), math.saturate(comboMeter / 4))
   local colorProximity = rgbm.new(hsv(proximityColor, math.saturate(proximityStreak > 0 and proximityMultiplier / 10 or 0), 1):rgb(), math.saturate(proximityStreak > 0 and proximityMultiplier / 4 or 0.5))
 
-  ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 600, 100), vec2(400, 400))
+  ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 700, 100), vec2(500, 400)) -- Shift window left and widen
   ui.beginOutline()
 
   -- PB further left
   ui.pushFont(ui.Font.Title)
   ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
-  ui.setCursorX(10) -- Move PB to the far left with a 10-pixel offset
+  ui.setCursorX(5) -- Move PB to the far left with a minimal offset
   ui.text('PB: ' .. highestScore)
   ui.popStyleVar()
-  ui.sameLine(0, 50) -- Increase spacing to 50 pixels to push multipliers further right
+  ui.sameLine(0, 100) -- Increase spacing to 100 pixels to push multipliers far right
 
   -- Multipliers centered above PTS
-  local windowWidth = 400
+  local windowWidth = 500 -- Updated to match new window width
   local proximityWidth = ui.measureText('Proximity: ' .. string.format('%.1fx', proximityMultiplier))
   local comboWidth = ui.measureText('Combo: ' .. math.ceil(comboMeter * 10) / 10 .. 'x')
   local totalWidth = proximityWidth + comboWidth + 40 -- 40 is the sameLine spacing
