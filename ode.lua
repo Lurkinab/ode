@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with Proximity rename, 5s cooldown, and PTS box fix
+-- Assetto Corsa ode.lua script with reorganized UI based on PNG design
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -217,38 +217,47 @@ function script.drawUI()
   ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 600, 100), vec2(400, 400))
   ui.beginOutline()
 
-  -- Multipliers side by side at the top
+  -- Multipliers centered above PTS box
   ui.pushFont(ui.Font.Title)
-  ui.textColored('Proximity Multiplier: ' .. string.format('%.1fx', proximityMultiplier), colorProximity)
+  local windowWidth = 400
+  local proximityWidth = ui.measureText('Proximity: ' .. string.format('%.1fx', proximityMultiplier))
+  local comboWidth = ui.measureText('Combo: ' .. math.ceil(comboMeter * 10) / 10 .. 'x')
+  local totalWidth = proximityWidth + comboWidth + 40 -- 40 is the sameLine spacing
+  local startX = (windowWidth - totalWidth) / 2
+  ui.setCursorX(startX)
+  ui.textColored('Proximity: ' .. string.format('%.1fx', proximityMultiplier), colorProximity)
   ui.sameLine(0, 40)
   ui.textColored('Combo: ' .. math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
   ui.popFont()
 
-  -- Points in a non-transparent white box with black text
-  ui.offsetCursorY(10)
-  -- Using beginTransparentWindow with full opacity to simulate an opaque window
-  ui.beginTransparentWindow('scoreBox', vec2(uiState.windowSize.x * 0.5 - 650, 150), vec2(300, 60))
-  ui.drawRectFilled(vec2(0, 0), vec2(300, 60), rgbm(1, 1, 1, 1)) -- White background
+  -- PTS box (larger grey box)
+  ui.offsetCursorY(40) -- Move down to align with PNG design
+  ui.beginTransparentWindow('scoreBox', vec2(uiState.windowSize.x * 0.5 - 650, 150), vec2(200, 60))
+  ui.drawRectFilled(vec2(0, 0), vec2(200, 60), rgbm(0.8, 0.8, 0.8, 1)) -- Grey background
   ui.pushFont(ui.Font.Huge)
+  local textWidth = ui.measureText(totalScore .. ' PTS')
+  ui.setCursorX((200 - textWidth) / 2) -- Center the text
   ui.textColored(totalScore .. ' PTS', rgbm(0, 0, 0, 1)) -- Black text
   ui.popFont()
   ui.endTransparentWindow()
 
-  -- Personal Best
-  ui.offsetCursorY(70) -- Adjusted to account for the box height
+  -- Personal Best to the right of PTS
+  ui.beginTransparentWindow('pbBox', vec2(uiState.windowSize.x * 0.5 - 450, 150), vec2(100, 60))
+  ui.drawRectFilled(vec2(0, 0), vec2(100, 60), rgbm(0.8, 0.8, 0.8, 1)) -- Grey background
   ui.pushFont(ui.Font.Title)
+  local pbTextWidth = ui.measureText('Personal Best: ' .. highestScore)
+  ui.setCursorX((100 - pbTextWidth) / 2) -- Center the text
   ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
   ui.text('Personal Best: ' .. highestScore)
   ui.popStyleVar()
-
-  -- Collisions
-  ui.offsetCursorY(10)
-  ui.textColored('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
   ui.popFont()
+  ui.endTransparentWindow()
 
-  -- Messages with larger text
-  ui.offsetCursorY(20)
+  -- Collisions and messages together below
+  ui.offsetCursorY(70) -- Move down to group with messages
   ui.pushFont(ui.Font.Title)
+  ui.textColored('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
+  ui.offsetCursorY(10)
   ui.pushStyleVar(ui.StyleVar.ItemSpacing, vec2(0, 10))
   for i, msg in ipairs(messages) do
     local alpha = 1.0 - (msg.age / messageLifetime)
