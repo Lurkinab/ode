@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with colored UI messages and larger text
+-- Assetto Corsa ode.lua script with reorganized UI and larger message text
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -44,7 +44,6 @@ function addMessage(text, color)
   end
 end
 
--- Function to update messages
 local function updateMessages(dt)
   comboColor = comboColor + dt * 10 * comboMeter
   if comboColor > 360 then comboColor = comboColor - 360 end
@@ -137,7 +136,7 @@ function script.update(dt)
       comboMeter = 1
       nearMissMultiplier = 1.0
       nearMissStreak = 0
-      addMessage('Collision: -1500', rgbm(1, 0, 0, 1)) -- Red for Collision
+      addMessage('Collision: -1500', rgbm(1, 0, 0, 1))
       addMessage('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
       if collisionCounter >= maxCollisions then
         totalScore = 0
@@ -167,7 +166,7 @@ function script.update(dt)
           local nearMissPoints = math.ceil(50 * comboMeter * nearMissMultiplier)
           totalScore = totalScore + nearMissPoints
           comboMeter = comboMeter + (distance < 1.0 and 3 or 1)
-          addMessage('Near Miss! +' .. nearMissPoints .. ' x' .. nearMissStreak, rgbm(0.576, 0.439, 0.858, 1)) -- Purple for Near Miss
+          addMessage('Near Miss! +' .. nearMissPoints .. ' x' .. nearMissStreak, rgbm(0.576, 0.439, 0.858, 1))
         end
       end
 
@@ -185,7 +184,7 @@ function script.update(dt)
             comboMeter = comboMeter + 1
             comboColor = comboColor + 90
             state.overtaken = true
-            addMessage('Overtake! +50', rgbm(0, 1, 0, 1)) -- Green for Overtake
+            addMessage('Overtake! +50', rgbm(0, 1, 0, 1))
           end
         end
       else
@@ -214,38 +213,41 @@ function script.drawUI()
   ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 600, 100), vec2(400, 400))
   ui.beginOutline()
 
-  ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
+  -- Multipliers side by side at the top
   ui.pushFont(ui.Font.Title)
-  ui.text('Highest Score: ' .. highestScore)
+  ui.text('Near Miss Multiplier: ' .. string.format('%.1fx', nearMissMultiplier))
+  ui.sameLine(0, 40)
+  ui.textColored('Combo: ' .. math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
   ui.popFont()
-  ui.popStyleVar()
 
+  -- Points below multipliers
+  ui.offsetCursorY(10)
   ui.pushFont(ui.Font.Huge)
   ui.text(totalScore .. ' pts')
-  ui.sameLine(0, 40)
-  ui.beginRotation()
-  ui.textColored(math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
-  if comboMeter > 20 then
-    ui.endRotation(math.sin(comboMeter / 180 * 3141.5) * 3 * math.lerpInvSat(comboMeter, 20, 30) + 90)
-  end
   ui.popFont()
 
+  -- Personal Best (moved from top)
   ui.offsetCursorY(20)
   ui.pushFont(ui.Font.Title)
+  ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
+  ui.text('Personal Best: ' .. highestScore)
+  ui.popStyleVar()
+
+  -- Collisions
+  ui.offsetCursorY(10)
   ui.textColored('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
-  ui.text('Near Miss Multiplier: ' .. string.format('%.1fx', nearMissMultiplier))
   ui.popFont()
 
-  -- Draw temporary messages with increased size and custom colors
+  -- Messages with larger text
   ui.offsetCursorY(20)
-  ui.pushFont(ui.Font.Main) -- Switching to Main font and increasing size
-  ui.pushStyleVar(ui.StyleVar.ItemSpacing, vec2(0, 8)) -- Adjust spacing for larger text
+  ui.pushFont(ui.Font.Title) -- Larger font for messages
+  ui.pushStyleVar(ui.StyleVar.ItemSpacing, vec2(0, 10)) -- Increased spacing for larger text
   for i, msg in ipairs(messages) do
     local alpha = 1.0 - (msg.age / messageLifetime)
     ui.pushStyleVar(ui.StyleVar.Alpha, alpha)
     ui.textColored(msg.text, msg.color)
     ui.popStyleVar()
-    ui.offsetCursorY(24) -- Increased from 20 to 24 to accommodate larger text
+    ui.offsetCursorY(30) -- Increased spacing for larger font
   end
   ui.popStyleVar()
   ui.popFont()
