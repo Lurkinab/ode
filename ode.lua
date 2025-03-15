@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with bold multipliers, Proximity rename, and PTS box
+-- Assetto Corsa ode.lua script with Proximity rename, 5s cooldown, and PTS box
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -217,13 +217,11 @@ function script.drawUI()
   ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 600, 100), vec2(400, 400))
   ui.beginOutline()
 
-  -- Multipliers side by side at the top with bold text and color cycling
+  -- Multipliers side by side at the top
   ui.pushFont(ui.Font.Title)
-  ui.pushStyleVar(ui.StyleVar.TextBold, true) -- Make text bolder
   ui.textColored('Proximity Multiplier: ' .. string.format('%.1fx', proximityMultiplier), colorProximity)
   ui.sameLine(0, 40)
   ui.textColored('Combo: ' .. math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
-  ui.popStyleVar()
   ui.popFont()
 
   -- Points in a non-transparent white box with black text
