@@ -1,4 +1,4 @@
--- Assetto Corsa ode.lua script with reorganized UI based on PNG design
+-- Assetto Corsa ode.lua script with transparent UI and color-changing Proximity
 
 -- Event configuration:
 local requiredSpeed = 55
@@ -21,7 +21,7 @@ local proximityDistance = 3.0
 local proximityMultiplier = 1.0
 local proximityResetTime = 5 -- Changed from 3 to 5 seconds
 local lastProximity = 0
-local proximityColor = 0 -- For color cycling
+local proximityColor = 0 -- For color cycling, activated when proximity event occurs
 
 -- Event state:
 local timePassed = 0
@@ -47,7 +47,9 @@ end
 
 local function updateMessages(dt)
   comboColor = comboColor + dt * 10 * comboMeter
-  proximityColor = proximityColor + dt * 8 * proximityMultiplier -- Slightly slower color cycle than combo
+  if proximityStreak > 0 then -- Color change only when proximity is active
+    proximityColor = proximityColor + dt * 8 * proximityMultiplier
+  end
   if comboColor > 360 then comboColor = comboColor - 360 end
   if proximityColor > 360 then proximityColor = proximityColor - 360 end
   for i = #messages, 1, -1 do
@@ -87,7 +89,7 @@ function script.update(dt)
     if proximityCooldown <= 0 then
       proximityStreak = 0
       proximityMultiplier = 1.0
-      addMessage('Proximity Multiplier Reset!')
+      addMessage('Proximity Reset!')
     end
   end
 
@@ -212,49 +214,38 @@ function script.drawUI()
   local colorGrey = rgbm(0.7, 0.7, 0.7, 1)
   local colorAccent = rgbm.new(hsv(speedRelative * 120, 1, 1):rgb(), 1)
   local colorCombo = rgbm.new(hsv(comboColor, math.saturate(comboMeter / 10), 1):rgb(), math.saturate(comboMeter / 4))
-  local colorProximity = rgbm.new(hsv(proximityColor, math.saturate(proximityMultiplier / 10), 1):rgb(), math.saturate(proximityMultiplier / 4))
+  local colorProximity = rgbm.new(hsv(proximityColor, math.saturate(proximityStreak > 0 and proximityMultiplier / 10 or 0), 1):rgb(), math.saturate(proximityStreak > 0 and proximityMultiplier / 4 or 0.5))
 
   ui.beginTransparentWindow('overtakeScore', vec2(uiState.windowSize.x * 0.5 - 600, 100), vec2(400, 400))
   ui.beginOutline()
 
-  -- Multipliers centered above PTS box
+  -- PB at top left
   ui.pushFont(ui.Font.Title)
+  ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
+  ui.text('PB: ' .. highestScore)
+  ui.popStyleVar()
+  ui.sameLine(0, 20) -- Spacing before multipliers
+
+  -- Multipliers centered above PTS
   local windowWidth = 400
   local proximityWidth = ui.measureText('Proximity: ' .. string.format('%.1fx', proximityMultiplier))
   local comboWidth = ui.measureText('Combo: ' .. math.ceil(comboMeter * 10) / 10 .. 'x')
   local totalWidth = proximityWidth + comboWidth + 40 -- 40 is the sameLine spacing
-  local startX = (windowWidth - totalWidth) / 2
+  local startX = (windowWidth - totalWidth) / 2 + ui.getCursorX() -- Adjust for PB position
   ui.setCursorX(startX)
   ui.textColored('Proximity: ' .. string.format('%.1fx', proximityMultiplier), colorProximity)
   ui.sameLine(0, 40)
   ui.textColored('Combo: ' .. math.ceil(comboMeter * 10) / 10 .. 'x', colorCombo)
   ui.popFont()
 
-  -- PTS box (larger grey box)
-  ui.offsetCursorY(40) -- Move down to align with PNG design
-  ui.beginTransparentWindow('scoreBox', vec2(uiState.windowSize.x * 0.5 - 650, 150), vec2(200, 60))
-  ui.drawRectFilled(vec2(0, 0), vec2(200, 60), rgbm(0.8, 0.8, 0.8, 1)) -- Grey background
+  -- PTS text (no box, transparent)
+  ui.offsetCursorY(40) -- Move down to align with previous design
   ui.pushFont(ui.Font.Huge)
-  local textWidth = ui.measureText(totalScore .. ' PTS')
-  ui.setCursorX((200 - textWidth) / 2) -- Center the text
-  ui.textColored(totalScore .. ' PTS', rgbm(0, 0, 0, 1)) -- Black text
+  ui.text(totalScore .. ' PTS')
   ui.popFont()
-  ui.endTransparentWindow()
-
-  -- Personal Best to the right of PTS
-  ui.beginTransparentWindow('pbBox', vec2(uiState.windowSize.x * 0.5 - 450, 150), vec2(100, 60))
-  ui.drawRectFilled(vec2(0, 0), vec2(100, 60), rgbm(0.8, 0.8, 0.8, 1)) -- Grey background
-  ui.pushFont(ui.Font.Title)
-  local pbTextWidth = ui.measureText('Personal Best: ' .. highestScore)
-  ui.setCursorX((100 - pbTextWidth) / 2) -- Center the text
-  ui.pushStyleVar(ui.StyleVar.Alpha, 1 - speedWarning)
-  ui.text('Personal Best: ' .. highestScore)
-  ui.popStyleVar()
-  ui.popFont()
-  ui.endTransparentWindow()
 
   -- Collisions and messages together below
-  ui.offsetCursorY(70) -- Move down to group with messages
+  ui.offsetCursorY(20) -- Move down to group with messages
   ui.pushFont(ui.Font.Title)
   ui.textColored('Collisions: ' .. collisionCounter .. '/' .. maxCollisions, rgbm(1, 0, 0, 1))
   ui.offsetCursorY(10)
